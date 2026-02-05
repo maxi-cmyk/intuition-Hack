@@ -1,31 +1,59 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 const DEFAULT_PIN = "1234";
 const PIN_STORAGE_KEY = "echo_settings_pin";
 
+type SettingsView = "menu" | "media" | "algorithm" | "voice";
+
+// Demo data for processing queue
+const demoQueueItems = [
+  {
+    id: "1",
+    name: "grandkids_birthday.mp4",
+    status: "needs_review" as const,
+    description:
+      "This is a joyful birthday celebration with your grandchildren at Central Park on March 18, 2024. Everyone is smiling and having a wonderful time.",
+  },
+  { id: "2", name: "paris_vacation.jpg", status: "analyzing" as const },
+  { id: "3", name: "beach_family.jpg", status: "synthesizing" as const },
+];
+
+// Voice profiles (narrator voices)
+interface VoiceProfile {
+  id: string;
+  name: string;
+  status: "pending" | "processing" | "ready";
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState("");
+  const [pinError, setPinError] = useState(false);
+  const [currentView, setCurrentView] = useState<SettingsView>("menu");
 
-  // Change password state
-  const [currentPin, setCurrentPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [confirmPin, setConfirmPin] = useState("");
-  const [changeError, setChangeError] = useState("");
-  const [changeSuccess, setChangeSuccess] = useState(false);
-
-  // Settings state
-  const [noveltyWeight, setNoveltyWeight] = useState<"low" | "medium" | "high">(
+  // Algorithm settings
+  const [fixationCooldown, setFixationCooldown] = useState(24);
+  const [noveltyWeight, setNoveltyWeight] = useState(50);
+  const [sensitivity, setSensitivity] = useState<"low" | "medium" | "high">(
     "medium",
   );
-  const [tapSensitivity, setTapSensitivity] = useState<
-    "low" | "medium" | "high"
-  >("medium");
+  const [sundowningTime, setSundowningTime] = useState("18:00");
+
+  // Voice settings
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [voices, setVoices] = useState<VoiceProfile[]>([
+    { id: "1", name: "Narrator", status: "ready" },
+  ]);
+  const [activeVoice, setActiveVoice] = useState("1");
+  const [isNamingVoice, setIsNamingVoice] = useState(false);
+  const [newVoiceName, setNewVoiceName] = useState("");
+
+  const recordingInterval = useRef<NodeJS.Timeout | null>(null);
 
   const getStoredPin = () => {
     if (typeof window !== "undefined") {
@@ -34,75 +62,178 @@ export default function SettingsPage() {
     return DEFAULT_PIN;
   };
 
-  const handlePinSubmit = () => {
-    if (pinInput === getStoredPin()) {
-      setIsUnlocked(true);
-      setPinError("");
-    } else {
-      setPinError("Incorrect PIN");
-      setPinInput("");
+  const handlePinDigit = (digit: string) => {
+    if (pinInput.length < 4) {
+      const newPin = pinInput + digit;
+      setPinInput(newPin);
+      setPinError(false);
+
+      if (newPin.length === 4) {
+        if (newPin === getStoredPin()) {
+          setIsUnlocked(true);
+        } else {
+          setPinError(true);
+          setTimeout(() => setPinInput(""), 300);
+        }
+      }
     }
   };
 
-  const handleChangePassword = () => {
-    setChangeError("");
-    setChangeSuccess(false);
+  const handlePinClear = () => {
+    setPinInput("");
+    setPinError(false);
+  };
 
-    if (currentPin !== getStoredPin()) {
-      setChangeError("Current PIN is incorrect");
-      return;
-    }
-
-    if (newPin.length < 4) {
-      setChangeError("PIN must be at least 4 digits");
-      return;
-    }
-
-    if (newPin !== confirmPin) {
-      setChangeError("New PINs do not match");
-      return;
-    }
-
-    localStorage.setItem(PIN_STORAGE_KEY, newPin);
-    setChangeSuccess(true);
-    setCurrentPin("");
-    setNewPin("");
-    setConfirmPin("");
+  const handlePinBackspace = () => {
+    setPinInput((prev) => prev.slice(0, -1));
+    setPinError(false);
   };
 
   const handleBack = () => {
+    if (currentView === "menu") {
+      router.push("/");
+    } else {
+      setCurrentView("menu");
+    }
+  };
+
+  const handleClose = () => {
     router.push("/");
+  };
+
+  const startRecording = () => {
+    setIsRecording(true);
+    setRecordingTime(0);
+    recordingInterval.current = setInterval(() => {
+      setRecordingTime((t) => {
+        if (t >= 60) {
+          stopRecording();
+          return 60;
+        }
+        return t + 1;
+      });
+    }, 1000);
+  };
+
+  const stopRecording = () => {
+    setIsRecording(false);
+    if (recordingInterval.current) {
+      clearInterval(recordingInterval.current);
+    }
+    setIsNamingVoice(true);
+  };
+
+  const saveNewVoice = () => {
+    if (newVoiceName.trim()) {
+      const newId = Date.now().toString();
+      const newVoice: VoiceProfile = {
+        id: newId,
+        name: newVoiceName.trim(),
+        status: "processing",
+      };
+      setVoices((prev) => [...prev, newVoice]);
+      setActiveVoice(newId);
+      setNewVoiceName("");
+      setIsNamingVoice(false);
+      setRecordingTime(0);
+    }
+  };
+
+  const cancelRecording = () => {
+    setIsNamingVoice(false);
+    setNewVoiceName("");
+    setRecordingTime(0);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   // PIN Entry Modal
   if (!isUnlocked) {
     return (
-      <div className="pin-modal">
-        <div className="pin-container">
-          <h2 className="pin-title">Enter PIN</h2>
-          <p className="pin-subtitle">Enter your PIN to access settings</p>
+      <div className="settings-overlay">
+        <div className="pin-modal-new">
+          <h2 className="pin-title-new">Enter PIN</h2>
 
-          <input
-            type="password"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={6}
-            value={pinInput}
-            onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
-            onKeyDown={(e) => e.key === "Enter" && handlePinSubmit()}
-            className="pin-input"
-            placeholder="••••"
-            autoFocus
-          />
+          <div className="pin-display">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className={`pin-box ${pinInput.length > i ? "filled" : ""} ${pinError ? "error" : ""}`}
+              >
+                {pinInput.length > i ? "•" : ""}
+              </div>
+            ))}
+          </div>
 
-          {pinError && <p className="pin-error">{pinError}</p>}
-
-          <div className="pin-buttons">
-            <button onClick={handleBack} className="btn-secondary">
-              Cancel
+          <div className="numpad">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+              <button
+                key={digit}
+                className="numpad-btn"
+                onClick={() => handlePinDigit(digit.toString())}
+              >
+                {digit}
+              </button>
+            ))}
+            <button className="numpad-btn" onClick={handlePinClear}>
+              Clear
             </button>
-            <button onClick={handlePinSubmit} className="btn-primary">
-              Unlock
+            <button className="numpad-btn" onClick={() => handlePinDigit("0")}>
+              0
+            </button>
+            <button className="numpad-btn" onClick={handlePinBackspace}>
+              ⌫
+            </button>
+          </div>
+
+          <button className="cancel-btn" onClick={handleClose}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Settings Menu
+  if (currentView === "menu") {
+    return (
+      <div className="settings-overlay">
+        <div className="settings-modal">
+          <div className="modal-header">
+            <div className="logo-placeholder">e</div>
+            <h1>Settings</h1>
+            <button className="close-btn" onClick={handleClose}>
+              ×
+            </button>
+          </div>
+
+          <div className="menu-cards">
+            <button
+              className="menu-card"
+              onClick={() => setCurrentView("media")}
+            >
+              <h3>Media Management</h3>
+              <p>Upload photos/videos and manage processing queue</p>
+            </button>
+
+            <button
+              className="menu-card"
+              onClick={() => setCurrentView("algorithm")}
+            >
+              <h3>Algorithm Calibration</h3>
+              <p>Tune the Dynamic Impedance Matcher settings</p>
+            </button>
+
+            <button
+              className="menu-card"
+              onClick={() => setCurrentView("voice")}
+            >
+              <h3>Neural Proxy</h3>
+              <p>Configure voice enrollment and selection</p>
             </button>
           </div>
         </div>
@@ -110,111 +241,280 @@ export default function SettingsPage() {
     );
   }
 
-  // Settings Page
-  return (
-    <main className="settings-page">
-      <header className="settings-header">
-        <button onClick={handleBack} className="back-button">
-          ← Back
-        </button>
-        <h1>Settings</h1>
-      </header>
-
-      <div className="settings-content">
-        {/* Preferences Section */}
-        <section className="settings-section">
-          <h2>Preferences</h2>
-
-          <div className="setting-row">
-            <label>Novelty Weight</label>
-            <select
-              value={noveltyWeight}
-              onChange={(e) =>
-                setNoveltyWeight(e.target.value as "low" | "medium" | "high")
-              }
-              className="setting-select"
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
+  // Media Management
+  if (currentView === "media") {
+    return (
+      <div className="settings-overlay">
+        <div className="settings-modal">
+          <div className="modal-header">
+            <button className="back-btn" onClick={handleBack}>
+              ←
+            </button>
+            <div className="logo-placeholder">e</div>
+            <h1>Media Management</h1>
+            <button className="close-btn" onClick={handleClose}>
+              ×
+            </button>
           </div>
 
-          <div className="setting-row">
-            <label>Tap Sensitivity</label>
-            <select
-              value={tapSensitivity}
-              onChange={(e) =>
-                setTapSensitivity(e.target.value as "low" | "medium" | "high")
-              }
-              className="setting-select"
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
+          <div className="modal-content">
+            <h2 className="section-title">Media Management</h2>
+
+            <div className="upload-zone">
+              <div className="upload-icon">↑</div>
+              <p>Drop photos/videos here or click to upload</p>
+              <button className="choose-files-btn">Choose Files</button>
+            </div>
+
+            <h2 className="section-title">Processing Queue</h2>
+
+            <div className="queue-list">
+              {demoQueueItems.map((item) => (
+                <div key={item.id} className="queue-item">
+                  <div className="queue-item-header">
+                    <span className="queue-icon">
+                      {item.status === "needs_review" ? "⚠" : "◔"}
+                    </span>
+                    <span className="queue-name">{item.name}</span>
+                    <span className={`queue-status ${item.status}`}>
+                      {item.status === "needs_review"
+                        ? "Needs Review"
+                        : item.status === "analyzing"
+                          ? "Analyzing..."
+                          : "Synthesizing..."}
+                    </span>
+                  </div>
+                  {item.description && (
+                    <>
+                      <p className="queue-description">{item.description}</p>
+                      <div className="queue-actions">
+                        <button className="action-btn greenlight">
+                          Greenlight
+                        </button>
+                        <button className="action-btn edit">Edit Script</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </section>
-
-        {/* Change Password Section */}
-        <section className="settings-section">
-          <h2>Change PIN</h2>
-
-          <div className="setting-row">
-            <label>Current PIN</label>
-            <input
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
-              value={currentPin}
-              onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ""))}
-              className="setting-input"
-              placeholder="••••"
-            />
-          </div>
-
-          <div className="setting-row">
-            <label>New PIN</label>
-            <input
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
-              value={newPin}
-              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ""))}
-              className="setting-input"
-              placeholder="••••"
-            />
-          </div>
-
-          <div className="setting-row">
-            <label>Confirm New PIN</label>
-            <input
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
-              value={confirmPin}
-              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
-              className="setting-input"
-              placeholder="••••"
-            />
-          </div>
-
-          {changeError && <p className="change-error">{changeError}</p>}
-          {changeSuccess && (
-            <p className="change-success">PIN changed successfully!</p>
-          )}
-
-          <button
-            onClick={handleChangePassword}
-            className="btn-primary full-width"
-          >
-            Update PIN
-          </button>
-        </section>
+        </div>
       </div>
-    </main>
-  );
+    );
+  }
+
+  // Algorithm Calibration
+  if (currentView === "algorithm") {
+    return (
+      <div className="settings-overlay">
+        <div className="settings-modal">
+          <div className="modal-header">
+            <button className="back-btn" onClick={handleBack}>
+              ←
+            </button>
+            <div className="logo-placeholder">e</div>
+            <h1>Algorithm Calibration</h1>
+            <button className="close-btn" onClick={handleClose}>
+              ×
+            </button>
+          </div>
+
+          <div className="modal-content">
+            <div className="setting-group">
+              <div className="setting-label-row">
+                <span className="setting-label">Fixation Cooldown</span>
+                <span className="setting-value">{fixationCooldown} Hours</span>
+              </div>
+              <p className="setting-hint">
+                How long a &quot;Liked&quot; memory is hidden from the queue
+              </p>
+              <div className="slider-container">
+                <input
+                  type="range"
+                  min="1"
+                  max="48"
+                  value={fixationCooldown}
+                  onChange={(e) => setFixationCooldown(Number(e.target.value))}
+                  className="slider"
+                />
+                <div className="slider-labels">
+                  <span>1hr</span>
+                  <span>48hrs</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="setting-group">
+              <div className="setting-label-row">
+                <span className="setting-label">Novelty Weight</span>
+                <span className="setting-value">
+                  {noveltyWeight < 33
+                    ? "Low"
+                    : noveltyWeight < 66
+                      ? "Medium"
+                      : "High"}
+                </span>
+              </div>
+              <p className="setting-hint">
+                How aggressively the system pushes unseen/old photos over
+                familiar ones
+              </p>
+              <div className="slider-container">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={noveltyWeight}
+                  onChange={(e) => setNoveltyWeight(Number(e.target.value))}
+                  className="slider"
+                />
+                <div className="slider-labels">
+                  <span>Low</span>
+                  <span>High</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="setting-group">
+              <span className="setting-label">Sensitivity</span>
+              <p className="setting-hint">
+                Threshold for &quot;3+ Missed Taps&quot; trigger to switch to
+                Voice Mode
+              </p>
+              <div className="sensitivity-buttons">
+                {(["low", "medium", "high"] as const).map((level) => (
+                  <button
+                    key={level}
+                    className={`sensitivity-btn ${sensitivity === level ? "active" : ""}`}
+                    onClick={() => setSensitivity(level)}
+                  >
+                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="setting-group">
+              <span className="setting-label">Sundowning Trigger</span>
+              <p className="setting-hint">
+                Time when the app shifts to &quot;Low-pass Filter&quot; mode
+                (calming assets only)
+              </p>
+              <div className="time-input-container">
+                <input
+                  type="time"
+                  value={sundowningTime}
+                  onChange={(e) => setSundowningTime(e.target.value)}
+                  className="time-input"
+                />
+                <span className="time-icon">⏰</span>
+              </div>
+            </div>
+
+            <button className="save-btn">Save Settings</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Neural Proxy (Voice)
+  if (currentView === "voice") {
+    return (
+      <div className="settings-overlay">
+        <div className="settings-modal">
+          <div className="modal-header">
+            <button className="back-btn" onClick={handleBack}>
+              ←
+            </button>
+            <div className="logo-placeholder">e</div>
+            <h1>Neural Proxy</h1>
+            <button className="close-btn" onClick={handleClose}>
+              ×
+            </button>
+          </div>
+
+          <div className="modal-content">
+            <div className="voice-selection-dropdown-section">
+              <label className="section-title block mb-2">
+                Active Narrator Voice
+              </label>
+              <select
+                className="voice-select-dropdown"
+                value={activeVoice}
+                onChange={(e) => setActiveVoice(e.target.value)}
+                disabled={isRecording || isNamingVoice}
+              >
+                {voices.map((voice) => (
+                  <option key={voice.id} value={voice.id}>
+                    {voice.name}{" "}
+                    {voice.status === "ready" ? "(Ready)" : "(Processing...)"}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <hr
+              className="divider"
+              style={{ margin: "1.5rem 0", borderColor: "var(--border)" }}
+            />
+
+            <div className="recording-section">
+              {!isNamingVoice ? (
+                <>
+                  <button
+                    className={`recording-circle ${isRecording ? "recording" : ""}`}
+                    onClick={isRecording ? stopRecording : startRecording}
+                  >
+                    {isRecording ? "■" : "🎤"}
+                  </button>
+                  <p className="recording-time">
+                    {formatTime(recordingTime)} / 1:00
+                  </p>
+                  <p className="recording-hint">
+                    {isRecording
+                      ? "Recording... Tap to stop"
+                      : "Tap microphone to record a new voice"}
+                  </p>
+                </>
+              ) : (
+                <div className="naming-form">
+                  <h3
+                    className="section-title"
+                    style={{ marginBottom: "1rem" }}
+                  >
+                    Name Your New Voice
+                  </h3>
+                  <input
+                    type="text"
+                    className="voice-name-input"
+                    placeholder="E.g., Grandma's Voice"
+                    value={newVoiceName}
+                    onChange={(e) => setNewVoiceName(e.target.value)}
+                    autoFocus
+                  />
+                  <div className="naming-actions">
+                    <button className="cancel-btn" onClick={cancelRecording}>
+                      Discard
+                    </button>
+                    <button
+                      className="save-btn"
+                      onClick={saveNewVoice}
+                      style={{ marginTop: 0 }}
+                      disabled={!newVoiceName.trim()}
+                    >
+                      Save Voice
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }

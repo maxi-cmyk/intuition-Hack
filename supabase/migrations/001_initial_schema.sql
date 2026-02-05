@@ -5,7 +5,7 @@
 create extension if not exists "uuid-ossp";
 
 -- Patients (standalone, no caregiver dependency)
-create table patients (
+create table if not exists patients (
   id uuid primary key default uuid_generate_v4(),
   clerk_id text unique,
   display_name text not null,
@@ -14,7 +14,7 @@ create table patients (
 );
 
 -- Patient Settings
-create table patient_settings (
+create table if not exists patient_settings (
   patient_id uuid primary key references patients(id) on delete cascade,
   fixation_cooldown_hours int default 24,
   novelty_weight text default 'medium' check (novelty_weight in ('low', 'medium', 'high')),
@@ -25,7 +25,7 @@ create table patient_settings (
 );
 
 -- Voice Profiles (for narration)
-create table voice_profiles (
+create table if not exists voice_profiles (
   id uuid primary key default uuid_generate_v4(),
   patient_id uuid references patients(id) on delete cascade,
   name text not null,
@@ -36,7 +36,7 @@ create table voice_profiles (
 );
 
 -- Media Assets (uploaded photos/videos)
-create table media_assets (
+create table if not exists media_assets (
   id uuid primary key default uuid_generate_v4(),
   patient_id uuid references patients(id) on delete cascade,
   storage_path text not null,
@@ -50,7 +50,7 @@ create table media_assets (
 );
 
 -- Memories (synthesized content from media assets)
-create table memories (
+create table if not exists memories (
   id uuid primary key default uuid_generate_v4(),
   patient_id uuid references patients(id) on delete cascade,
   media_asset_id uuid references media_assets(id) on delete cascade,
@@ -66,7 +66,7 @@ create table memories (
 );
 
 -- Interactions (engagement tracking for feed algorithm)
-create table interactions (
+create table if not exists interactions (
   id uuid primary key default uuid_generate_v4(),
   patient_id uuid references patients(id) on delete cascade,
   memory_id uuid references memories(id) on delete cascade,
@@ -76,7 +76,7 @@ create table interactions (
 );
 
 -- Session logs (for analytics and debugging)
-create table sessions (
+create table if not exists sessions (
   id uuid primary key default uuid_generate_v4(),
   patient_id uuid references patients(id) on delete cascade,
   started_at timestamptz default now(),
@@ -86,16 +86,16 @@ create table sessions (
 );
 
 -- Indexes for query performance
-create index idx_memories_patient on memories(patient_id);
-create index idx_memories_status on memories(status);
-create index idx_memories_cooldown on memories(cooldown_until);
-create index idx_memories_last_shown on memories(last_shown_at);
-create index idx_media_assets_patient on media_assets(patient_id);
-create index idx_media_assets_type on media_assets(type);
-create index idx_interactions_memory on interactions(memory_id);
-create index idx_interactions_patient on interactions(patient_id);
-create index idx_interactions_created on interactions(created_at);
-create index idx_sessions_patient on sessions(patient_id);
+create index if not exists idx_memories_patient on memories(patient_id);
+create index if not exists idx_memories_status on memories(status);
+create index if not exists idx_memories_cooldown on memories(cooldown_until);
+create index if not exists idx_memories_last_shown on memories(last_shown_at);
+create index if not exists idx_media_assets_patient on media_assets(patient_id);
+create index if not exists idx_media_assets_type on media_assets(type);
+create index if not exists idx_interactions_memory on interactions(memory_id);
+create index if not exists idx_interactions_patient on interactions(patient_id);
+create index if not exists idx_interactions_created on interactions(created_at);
+create index if not exists idx_sessions_patient on sessions(patient_id);
 
 -- Row Level Security
 alter table patients enable row level security;
@@ -169,6 +169,7 @@ end;
 $$ language plpgsql;
 
 -- Trigger for patient_settings updated_at
+drop trigger if exists patient_settings_updated_at on patient_settings;
 create trigger patient_settings_updated_at
   before update on patient_settings
   for each row execute function update_updated_at();
