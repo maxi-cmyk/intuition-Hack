@@ -1,6 +1,5 @@
 /// <reference types="https://deno.land/x/deno@v2.1.4/cli/tsc/dts/lib.deno.d.ts" />
-// Novelty Engine Edge Function
-// Implements "Reverse TikTok" algorithm - prioritizes unseen/old memories
+// Novelty Engine - "Reverse TikTok" algorithm prioritizing unseen/old memories
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
@@ -15,14 +14,6 @@ interface FeedRequest {
   limit?: number;
   novelty_weight?: "low" | "medium" | "high";
   cooldown_hours?: number;
-}
-
-interface Memory {
-  id: string;
-  script: string;
-  audio_url: string | null;
-  engagement_count: number;
-  created_at: string;
 }
 
 Deno.serve(async (req) => {
@@ -42,8 +33,6 @@ Deno.serve(async (req) => {
         high: 2.0,
       }[novelty_weight] ?? 1.0;
 
-    // In production, this would query Supabase
-    // For now, return scoring algorithm description
     const algorithm = {
       description: "Reverse TikTok - prioritizes novel/old memories",
       scoring: {

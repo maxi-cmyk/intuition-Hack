@@ -1,5 +1,5 @@
-// Recall Scheduler Edge Function
-// Implements spaced repetition for memory reinforcement
+/// <reference types="https://deno.land/x/deno@v2.1.4/cli/tsc/dts/lib.deno.d.ts" />
+// Recall Scheduler - spaced repetition for memory reinforcement
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
@@ -31,7 +31,6 @@ Deno.serve(async (req) => {
         cooldown_hours = 24,
       }: RecordInteractionRequest = await req.json();
 
-      // Calculate cooldown if liked
       let cooldown_until = null;
       if (interaction_type === "like") {
         cooldown_until = new Date(
@@ -51,7 +50,6 @@ Deno.serve(async (req) => {
     }
 
     if (action === "stats") {
-      // Return spaced repetition algorithm info
       const algorithm = {
         description: "Spaced repetition for memory reinforcement",
         cooldown: "Applied when user likes a memory",

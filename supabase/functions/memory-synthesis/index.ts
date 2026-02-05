@@ -1,5 +1,5 @@
-// Memory Synthesis Edge Function
-// Analyzes images with OpenAI GPT-4o to generate narrative scripts
+/// <reference types="https://deno.land/x/deno@v2.1.4/cli/tsc/dts/lib.deno.d.ts" />
+// Memory Synthesis - analyzes images with GPT-4o to generate narrative scripts
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
@@ -22,7 +22,6 @@ interface SynthesisResponse {
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -30,7 +29,6 @@ Deno.serve(async (req) => {
   try {
     const { media_asset_id, image_url }: SynthesisRequest = await req.json();
 
-    // Call OpenAI GPT-4o Vision API
     const openaiResponse = await fetch(
       "https://api.openai.com/v1/chat/completions",
       {

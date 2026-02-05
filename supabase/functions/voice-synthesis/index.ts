@@ -1,5 +1,5 @@
-// Voice Synthesis Edge Function
-// Uses ElevenLabs for voice cloning and text-to-speech
+/// <reference types="https://deno.land/x/deno@v2.1.4/cli/tsc/dts/lib.deno.d.ts" />
+// Voice Synthesis - ElevenLabs voice cloning and text-to-speech
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
@@ -16,7 +16,6 @@ interface CloneVoiceRequest {
 }
 
 interface SynthesizeSpeechRequest {
-  memory_id: string;
   script: string;
   voice_id: string;
 }
@@ -31,19 +30,15 @@ Deno.serve(async (req) => {
     const action = url.pathname.split("/").pop();
 
     if (action === "clone") {
-      // Clone voice from audio sample
       const { name, sample_url }: CloneVoiceRequest = await req.json();
 
-      // Download the audio sample
       const audioResponse = await fetch(sample_url);
       const audioBlob = await audioResponse.blob();
 
-      // Create FormData for ElevenLabs
       const formData = new FormData();
       formData.append("name", name);
       formData.append("files", audioBlob, "sample.wav");
 
-      // Clone voice via ElevenLabs API
       const cloneResponse = await fetch(
         "https://api.elevenlabs.io/v1/voices/add",
         {
@@ -68,11 +63,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "synthesize") {
-      // Generate speech from script
-      const { memory_id, script, voice_id }: SynthesizeSpeechRequest =
-        await req.json();
-
-      // Call ElevenLabs TTS API
+      const { script, voice_id }: SynthesizeSpeechRequest = await req.json();
       const ttsResponse = await fetch(
         `https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`,
         {
@@ -96,17 +87,12 @@ Deno.serve(async (req) => {
         throw new Error(`ElevenLabs TTS error: ${ttsResponse.statusText}`);
       }
 
-      // Return audio directly
-      const audioData = await ttsResponse.arrayBuffer();
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          memory_id,
-          audio_size: audioData.byteLength,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(ttsResponse.body, {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "audio/mpeg",
+        },
+      });
     }
 
     return new Response(JSON.stringify({ error: "Unknown action" }), {
