@@ -8,18 +8,17 @@ const PIN_STORAGE_KEY = "echo_settings_pin";
 
 type SettingsView = "menu" | "media" | "algorithm" | "voice";
 
-// Demo data for processing queue
-const demoQueueItems = [
-  {
-    id: "1",
-    name: "grandkids_birthday.mp4",
-    status: "needs_review" as const,
-    description:
-      "This is a joyful birthday celebration with your grandchildren at Central Park on March 18, 2024. Everyone is smiling and having a wonderful time.",
-  },
-  { id: "2", name: "paris_vacation.jpg", status: "analyzing" as const },
-  { id: "3", name: "beach_family.jpg", status: "synthesizing" as const },
-];
+import { supabase } from "../../lib/supabase";
+
+interface QueueItem {
+  id: string;
+  name: string;
+  status: "analyzing" | "synthesizing" | "needs_review" | "ready" | "failed";
+  description?: string;
+  people?: string;
+  date?: string;
+  url?: string;
+}
 
 // Voice profiles (narrator voices)
 interface VoiceProfile {
@@ -34,13 +33,13 @@ export default function SettingsPage() {
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
   const [currentView, setCurrentView] = useState<SettingsView>("menu");
+  const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Algorithm settings
   const [fixationCooldown, setFixationCooldown] = useState(24);
   const [noveltyWeight, setNoveltyWeight] = useState(50);
-  const [sensitivity, setSensitivity] = useState<"low" | "medium" | "high">(
-    "medium",
-  );
+
   const [sundowningTime, setSundowningTime] = useState("18:00");
 
   // Voice settings
@@ -143,6 +142,100 @@ export default function SettingsPage() {
     setIsNamingVoice(false);
     setNewVoiceName("");
     setRecordingTime(0);
+  };
+
+  const handleRemoveItem = (id: string) => {
+    setQueueItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validImageTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ];
+    const validVideoTypes = ["video/mp4", "video/webm"];
+
+    const isImage = validImageTypes.includes(file.type);
+    const isVideo = validVideoTypes.includes(file.type);
+
+    if (!isImage && !isVideo) {
+      alert("Unsupported file format. Please upload JPG, PNG, WEBP, or MP4.");
+      return;
+    }
+
+    // Create optimistic item
+    const tempId = Date.now().toString();
+    const newItem: QueueItem = {
+      id: tempId,
+      name: file.name,
+      status: "analyzing",
+      description: "Uploading and analyzing...",
+    };
+
+    setQueueItems((prev) => [newItem, ...prev]);
+
+    try {
+      // 1. Upload to Supabase
+      const fileName = `${Date.now()}-${file.name.replace(/\s/g, "_")}`;
+      const { error: uploadError } = await supabase.storage
+        .from("media-assets")
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      // 2. Get Public URL
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("media-assets").getPublicUrl(fileName);
+
+      // 3. Analyze
+      const response = await fetch("/api/analyze-media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileUrl: publicUrl,
+          mediaType: isImage ? "image" : "video",
+        }),
+      });
+
+      const analysis = await response.json();
+
+      // 4. Update Item
+      setQueueItems((prev) =>
+        prev.map((item) =>
+          item.id === tempId
+            ? {
+                ...item,
+                status: "needs_review",
+                description: analysis.summary || "No description available",
+                people: analysis.people,
+                date: analysis.date,
+                url: publicUrl,
+              }
+            : item,
+        ),
+      );
+    } catch (error) {
+      console.error(error);
+      setQueueItems((prev) =>
+        prev.map((item) =>
+          item.id === tempId
+            ? {
+                ...item,
+                status: "failed",
+                description:
+                  "Failed to process file. Note: Raw formats like DNG are not supported.",
+              }
+            : item,
+        ),
+      );
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -260,7 +353,18 @@ export default function SettingsPage() {
           <div className="modal-content">
             <h2 className="section-title">Media Management</h2>
 
-            <div className="upload-zone">
+            <div
+              className="upload-zone"
+              onClick={() => fileInputRef.current?.click()}
+              style={{ cursor: "pointer" }}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
+                hidden
+              />
               <div className="upload-icon">↑</div>
               <p>Drop photos/videos here or click to upload</p>
               <button className="choose-files-btn">Choose Files</button>
@@ -269,7 +373,12 @@ export default function SettingsPage() {
             <h2 className="section-title">Processing Queue</h2>
 
             <div className="queue-list">
-              {demoQueueItems.map((item) => (
+              {queueItems.length === 0 && (
+                <p className="no-items text-center text-gray-500 py-8">
+                  No items in queue. Upload a photo or video to get started.
+                </p>
+              )}
+              {queueItems.map((item) => (
                 <div key={item.id} className="queue-item">
                   <div className="queue-item-header">
                     <span className="queue-icon">
@@ -281,19 +390,53 @@ export default function SettingsPage() {
                         ? "Needs Review"
                         : item.status === "analyzing"
                           ? "Analyzing..."
-                          : "Synthesizing..."}
+                          : item.status === "failed"
+                            ? "Failed"
+                            : "Synthesizing..."}
                     </span>
+                    <button
+                      className="queue-remove-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveItem(item.id);
+                      }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--text-muted)",
+                        fontSize: "1.25rem",
+                        lineHeight: "1",
+                        padding: "0 0.5rem",
+                        cursor: "pointer",
+                        marginLeft: "0.5rem",
+                      }}
+                      title="Remove"
+                    >
+                      ×
+                    </button>
                   </div>
-                  {item.description && (
-                    <>
+                  {(item.description || item.status === "analyzing") && (
+                    <div className="queue-details mt-2">
+                      {item.date && item.date !== "Unknown" && (
+                        <div className="text-xs text-muted-foreground mb-1">
+                          📅 {item.date}
+                        </div>
+                      )}
+                      {item.people && item.people !== "Unknown" && (
+                        <div className="text-xs text-muted-foreground mb-1">
+                          👥 {item.people}
+                        </div>
+                      )}
                       <p className="queue-description">{item.description}</p>
-                      <div className="queue-actions">
-                        <button className="action-btn greenlight">
-                          Greenlight
-                        </button>
-                        <button className="action-btn edit">Edit Script</button>
-                      </div>
-                    </>
+                    </div>
+                  )}
+                  {item.status === "needs_review" && (
+                    <div className="queue-actions">
+                      <button className="action-btn greenlight">
+                        Greenlight
+                      </button>
+                      <button className="action-btn edit">Edit Script</button>
+                    </div>
                   )}
                 </div>
               ))}
@@ -323,7 +466,7 @@ export default function SettingsPage() {
           <div className="modal-content">
             <div className="setting-group">
               <div className="setting-label-row">
-                <span className="setting-label">Fixation Cooldown</span>
+                <span className="setting-label">Like Cooldown</span>
                 <span className="setting-value">{fixationCooldown} Hours</span>
               </div>
               <p className="setting-hint">
@@ -347,7 +490,7 @@ export default function SettingsPage() {
 
             <div className="setting-group">
               <div className="setting-label-row">
-                <span className="setting-label">Novelty Weight</span>
+                <span className="setting-label">New Nostalgia</span>
                 <span className="setting-value">
                   {noveltyWeight < 33
                     ? "Low"
@@ -373,25 +516,6 @@ export default function SettingsPage() {
                   <span>Low</span>
                   <span>High</span>
                 </div>
-              </div>
-            </div>
-
-            <div className="setting-group">
-              <span className="setting-label">Sensitivity</span>
-              <p className="setting-hint">
-                Threshold for &quot;3+ Missed Taps&quot; trigger to switch to
-                Voice Mode
-              </p>
-              <div className="sensitivity-buttons">
-                {(["low", "medium", "high"] as const).map((level) => (
-                  <button
-                    key={level}
-                    className={`sensitivity-btn ${sensitivity === level ? "active" : ""}`}
-                    onClick={() => setSensitivity(level)}
-                  >
-                    {level.charAt(0).toUpperCase() + level.slice(1)}
-                  </button>
-                ))}
               </div>
             </div>
 
