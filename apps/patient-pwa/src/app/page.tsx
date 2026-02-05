@@ -38,13 +38,60 @@ const demoMemories: Memory[] = [
 export default function PatientView() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
   const [touchStart, setTouchStart] = useState<{
     y: number;
     time: number;
   } | null>(null);
   const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Interaction State
+  const [likedMemories, setLikedMemories] = useState<Set<string>>(new Set());
+  const [recalledMemories, setRecalledMemories] = useState<Set<string>>(
+    new Set(),
+  );
+
+  // Narration State
+  const [narrationScript, setNarrationScript] = useState<string | null>(null);
+  const [narrationAudio, setNarrationAudio] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   const currentMemory = demoMemories[currentIndex];
+  const isLiked = likedMemories.has(currentMemory.id);
+  const isRecalled = recalledMemories.has(currentMemory.id);
+
+  const toggleLike = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setLikedMemories((prev) => {
+      const next = new Set(prev);
+      if (next.has(currentMemory.id)) {
+        next.delete(currentMemory.id);
+        console.log(`Memory ${currentMemory.id} unliked.`);
+      } else {
+        next.add(currentMemory.id);
+        console.log(
+          `Memory ${currentMemory.id} liked. Cooldown increased (Reverse TikTok logic).`,
+        );
+      }
+      return next;
+    });
+  };
+
+  const toggleRecall = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRecalledMemories((prev) => {
+      const next = new Set(prev);
+      if (next.has(currentMemory.id)) {
+        next.delete(currentMemory.id);
+      } else {
+        next.add(currentMemory.id);
+        console.log(
+          `Memory ${currentMemory.id} marked for recall. Scheduled for future resurfacing.`,
+        );
+      }
+      return next;
+    });
+  };
 
   // Handle swipe up to next memory
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -56,7 +103,7 @@ export default function PatientView() {
     // Start hold timer for video generation
     holdTimerRef.current = setTimeout(() => {
       handleGenerateVideo();
-    }, 1500);
+    }, 2000);
   };
 
   const handleTouchMove = () => {
@@ -89,19 +136,81 @@ export default function PatientView() {
   };
 
   const nextMemory = () => {
+    setGeneratedVideo(null); // Reset video for next memory
     setCurrentIndex((prev) => (prev + 1) % demoMemories.length);
   };
 
-  const handleGenerateVideo = () => {
-    if (isGeneratingVideo) return;
+  const handleGenerateVideo = async () => {
+    if (isGeneratingVideo || generatedVideo) return;
 
     setIsGeneratingVideo(true);
-    // Simulate video generation
-    setTimeout(() => {
+    try {
+      const response = await fetch("/api/generate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: demoMemories[currentIndex].imageUrl,
+        }),
+      });
+      const data = await response.json();
+      if (data.videoUrl) {
+        setGeneratedVideo(data.videoUrl);
+      }
+    } catch (error) {
+      console.error("Failed to generate video", error);
+    } finally {
       setIsGeneratingVideo(false);
-      // In real app, this would trigger OpenAI video generation
-    }, 3000);
+    }
   };
+
+  // Narration Effect
+  useEffect(() => {
+    // Reset narration on memory change
+    setNarrationScript(null);
+    setNarrationAudio(null);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+
+    const fetchNarration = async () => {
+      const voiceId = localStorage.getItem("active_voice_id") || "1";
+      try {
+        const response = await fetch("/api/generate-narrator", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageUrl: demoMemories[currentIndex].imageUrl,
+            voiceId,
+          }),
+        });
+        const data = await response.json();
+        if (data.script && data.audioUrl) {
+          setNarrationScript(data.script);
+          setNarrationAudio(data.audioUrl);
+        }
+      } catch (error) {
+        console.error("Narration fetch failed", error);
+      }
+    };
+
+    // Small delay to allow transition
+    const timer = setTimeout(() => {
+      fetchNarration();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [currentIndex]);
+
+  // Auto-play audio when ready
+  useEffect(() => {
+    if (narrationAudio && audioRef.current) {
+      audioRef.current.volume = 1.0;
+      audioRef.current
+        .play()
+        .catch((e) => console.log("Autoplay blocked/failed", e));
+    }
+  }, [narrationAudio]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -119,18 +228,54 @@ export default function PatientView() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Memory Image */}
-      <img
-        src={currentMemory.imageUrl}
-        alt="Memory"
-        className="memory-image"
-        draggable={false}
-      />
+      {/* Memory Image or Video */}
+      {generatedVideo ? (
+        <video
+          src={generatedVideo}
+          className="memory-image"
+          autoPlay
+          loop
+          muted
+          playsInline
+        />
+      ) : (
+        <img
+          src={currentMemory.imageUrl}
+          alt="Memory"
+          className="memory-image"
+          draggable={false}
+        />
+      )}
 
       {/* Settings Button */}
       <Link href="/settings" className="settings-button">
         ⚙️
       </Link>
+
+      {/* Interaction Sidebar */}
+      <div className="interaction-sidebar">
+        <div className="interaction-item">
+          <button
+            className={`interaction-btn ${isLiked ? "active" : ""}`}
+            onClick={toggleLike}
+          >
+            <svg viewBox="0 0 24 24">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="interaction-item">
+          <button
+            className={`interaction-btn recall ${isRecalled ? "active" : ""}`}
+            onClick={toggleRecall}
+          >
+            <svg viewBox="0 0 24 24">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
       {/* Bottom Info with Date/Location Pills */}
       <div className="memory-info">
@@ -151,6 +296,12 @@ export default function PatientView() {
       <div className="absolute bottom-24 left-1/2 -translate-x-1/2 text-text-muted text-sm opacity-50">
         ↑ Swipe up for next
       </div>
+
+      {/* Narration Audio & Captions */}
+      <audio ref={audioRef} src={narrationAudio || ""} />
+      {narrationScript && (
+        <div className="caption-overlay">{narrationScript}</div>
+      )}
     </main>
   );
 }

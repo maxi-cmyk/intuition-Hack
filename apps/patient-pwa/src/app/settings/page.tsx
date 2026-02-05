@@ -567,7 +567,11 @@ export default function SettingsPage() {
               <select
                 className="voice-select-dropdown"
                 value={activeVoice}
-                onChange={(e) => setActiveVoice(e.target.value)}
+                onChange={(e) => {
+                  const newVoiceId = e.target.value;
+                  setActiveVoice(newVoiceId);
+                  localStorage.setItem("active_voice_id", newVoiceId);
+                }}
                 disabled={isRecording || isNamingVoice}
               >
                 {voices.map((voice) => (
