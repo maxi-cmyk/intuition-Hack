@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/* Echo Adaptive - Patient PWA Design System */
+:root {
+  /* Background colors */
+  --bg-primary: #0a0f0a;
+  --bg-card: #1a2a1a;
+  --bg-overlay: rgba(10, 15, 10, 0.85);
+
+  /* Border colors */
+  --border: #3d5a3d;
+  --border-focus: #7cb87c;
+
+  /* Accent colors */
+  --accent: #7cb87c;
+  --accent-muted: #4a6b4a;
+
+  /* Text colors */
+  --text-primary: #e8f0e8;
+  --text-muted: #8aa88a;
+}
+
+@theme inline {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-card: var(--bg-card);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-text-primary: var(--text-primary);
+  --color-text-muted: var(--text-muted);
+  --font-sans: var(--font-inter);
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Memory Card */
+.memory-card {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.memory-image {
+  width: 100%;
+  height: 85vh;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+/* Bottom Info Overlay */
+.memory-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Pill badges for date/location */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  background: rgba(26, 42, 26, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+/* Loading spinner */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.loading {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Video generation overlay */
+.video-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+}

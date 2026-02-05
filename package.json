@@ -1,0 +1,17 @@
+{
+  "name": "echo-adaptive",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "shared"
+  ],
+  "scripts": {
+    "dev:caregiver": "npm run dev --workspace=apps/caregiver-web",
+    "dev:patient": "npm run dev --workspace=apps/patient-pwa",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
