@@ -107,3 +107,219 @@ body {
   justify-content: center;
   border-radius: 16px;
 }
+
+/* Settings Button */
+.settings-button {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  background: var(--bg-overlay);
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
+  text-decoration: none;
+}
+
+.settings-button:hover {
+  transform: scale(1.1);
+  border-color: var(--accent);
+}
+
+/* PIN Modal */
+.pin-modal {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.pin-container {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+
+.pin-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.pin-subtitle {
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+}
+
+.pin-input {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.5rem;
+  text-align: center;
+  letter-spacing: 0.5rem;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.pin-input:focus {
+  border-color: var(--accent);
+}
+
+.pin-error {
+  color: #e57373;
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.pin-buttons {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+/* Settings Page */
+.settings-page {
+  min-height: 100vh;
+  background: var(--bg-primary);
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.settings-header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.back-button {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.back-button:hover {
+  border-color: var(--accent);
+}
+
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.settings-section {
+  background: var(--bg-card);
+  padding: 1.5rem;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+
+.settings-section h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--accent);
+}
+
+.setting-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.setting-row label {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.setting-select,
+.setting-input {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.setting-select:focus,
+.setting-input:focus {
+  border-color: var(--accent);
+}
+
+/* Buttons */
+.btn-primary {
+  flex: 1;
+  padding: 0.75rem 1.5rem;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: var(--bg-primary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  flex: 1;
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent);
+}
+
+.full-width {
+  width: 100%;
+}
+
+.change-error {
+  color: #e57373;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.change-success {
+  color: var(--accent);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}

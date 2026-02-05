@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 
 interface Memory {
   id: string;
@@ -125,6 +126,11 @@ export default function PatientView() {
         className="memory-image"
         draggable={false}
       />
+
+      {/* Settings Button */}
+      <Link href="/settings" className="settings-button">
+        ⚙️
+      </Link>
 
       {/* Bottom Info with Date/Location Pills */}
       <div className="memory-info">

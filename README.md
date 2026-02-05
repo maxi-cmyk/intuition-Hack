@@ -7,7 +7,6 @@ A reminiscence therapy platform with adaptive accessibility for dementia patient
 ```
 echo-adaptive/
 ├── apps/
-│   ├── caregiver-web/    # Next.js dashboard for caregivers
 │   └── patient-pwa/      # Next.js PWA for patients (offline-first)
 ├── supabase/
 │   ├── migrations/       # Database schema
@@ -27,16 +26,6 @@ echo-adaptive/
 - **Deno** v1.40+ (for local edge function development)
 
 ## Dependencies
-
-### Caregiver Web App
-
-| Package                 | Purpose         |
-| ----------------------- | --------------- |
-| `next`                  | React framework |
-| `react` / `react-dom`   | UI library      |
-| `@clerk/nextjs`         | Authentication  |
-| `@supabase/supabase-js` | Database client |
-| `tailwindcss`           | Styling         |
 
 ### Patient PWA
 
@@ -68,11 +57,8 @@ npm install
 cp .env.example .env
 # Fill in your API keys (see below)
 
-# 3. Run caregiver dashboard
-npm run dev:caregiver
-
-# 4. Run patient app (in another terminal)
-npm run dev:patient
+# 3. Run the app
+npm run dev
 ```
 
 ## Environment Variables
@@ -87,6 +73,16 @@ Copy `.env.example` to `.env` and configure:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY`     | Supabase anonymous key                   |
 | `OPENAI_API_KEY`                    | OpenAI API key (for GPT-4o)              |
 | `ELEVENLABS_API_KEY`                | ElevenLabs API key (for voice synthesis) |
+
+## Settings Access
+
+Settings are protected by a PIN. Default PIN: `1234`
+
+To access settings:
+
+1. Tap the ⚙️ icon in the top-right corner
+2. Enter your PIN
+3. You can change the PIN in the settings page
 
 ## Supabase Setup
 
@@ -109,9 +105,8 @@ supabase functions deploy recall-scheduler
 
 ## Scripts
 
-| Command                 | Description             |
-| ----------------------- | ----------------------- |
-| `npm run dev:caregiver` | Start caregiver web app |
-| `npm run dev:patient`   | Start patient PWA       |
-| `npm run build`         | Build all workspaces    |
-| `npm run lint`          | Lint all workspaces     |
+| Command         | Description          |
+| --------------- | -------------------- |
+| `npm run dev`   | Start patient PWA    |
+| `npm run build` | Build for production |
+| `npm run lint`  | Lint code            |
