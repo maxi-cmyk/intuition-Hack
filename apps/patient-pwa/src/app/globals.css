@@ -1023,6 +1023,14 @@ body {
   cursor: not-allowed;
 }
 
+.voice-selection-dropdown-section {
+  min-height: 80px;
+}
+
+.upload-voice-btn:hover {
+  border-color: var(--accent);
+}
+
 /* Naming Form */
 .naming-form {
   background: var(--bg-card);

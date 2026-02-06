@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 const DEFAULT_PIN = "1234";
 const PIN_STORAGE_KEY = "echo_settings_pin";
+const ALGORITHM_SETTINGS_KEY = "echo_algorithm_settings";
 
 type SettingsView = "menu" | "media" | "algorithm" | "voice";
 
@@ -24,7 +25,8 @@ interface QueueItem {
 interface VoiceProfile {
   id: string;
   name: string;
-  status: "pending" | "processing" | "ready";
+  status: "pending" | "processing" | "ready" | "failed";
+  samples: { filename: string; date: string }[];
 }
 
 export default function SettingsPage() {
@@ -39,20 +41,43 @@ export default function SettingsPage() {
   // Algorithm settings
   const [fixationCooldown, setFixationCooldown] = useState(24);
   const [noveltyWeight, setNoveltyWeight] = useState(50);
-
   const [sundowningTime, setSundowningTime] = useState("18:00");
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   // Voice settings
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [voices, setVoices] = useState<VoiceProfile[]>([
-    { id: "1", name: "Narrator", status: "ready" },
+    { id: "default", name: "Default Narrator", status: "ready", samples: [] },
   ]);
-  const [activeVoice, setActiveVoice] = useState("1");
+  const [activeVoice, setActiveVoice] = useState("default");
   const [isNamingVoice, setIsNamingVoice] = useState(false);
   const [newVoiceName, setNewVoiceName] = useState("");
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
 
   const recordingInterval = useRef<NodeJS.Timeout | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimeRef = useRef(0);
+
+  // Load algorithm settings from localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(ALGORITHM_SETTINGS_KEY);
+      if (saved) {
+        try {
+          const settings = JSON.parse(saved);
+          setFixationCooldown(settings.fixationCooldown ?? 24);
+          setNoveltyWeight(settings.noveltyWeight ?? 50);
+          setSundowningTime(settings.sundowningTime ?? "18:00");
+        } catch (e) {
+          console.error("Failed to load settings", e);
+        }
+      }
+    }
+  }, []);
 
   const getStoredPin = () => {
     if (typeof window !== "undefined") {
@@ -100,40 +125,117 @@ export default function SettingsPage() {
     router.push("/");
   };
 
-  const startRecording = () => {
-    setIsRecording(true);
-    setRecordingTime(0);
-    recordingInterval.current = setInterval(() => {
-      setRecordingTime((t) => {
-        if (t >= 60) {
-          stopRecording();
-          return 60;
+  // Real audio recording with MediaRecorder API
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+      recordingTimeRef.current = 0;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
         }
-        return t + 1;
-      });
-    }, 1000);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        setAudioBlob(blob);
+        stream.getTracks().forEach((track) => track.stop());
+
+        // Check if we reached 60 seconds
+        if (recordingTimeRef.current >= 60) {
+          setIsNamingVoice(true);
+        } else {
+          alert("Recording must be at least 1 minute. Please try again.");
+          setAudioBlob(null);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      recordingInterval.current = setInterval(() => {
+        recordingTimeRef.current += 1;
+        setRecordingTime(recordingTimeRef.current);
+
+        if (recordingTimeRef.current >= 60) {
+          stopRecording();
+        }
+      }, 1000);
+    } catch (error) {
+      console.error("Failed to access microphone:", error);
+      alert("Could not access microphone. Please check permissions.");
+    }
   };
 
   const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
     setIsRecording(false);
     if (recordingInterval.current) {
       clearInterval(recordingInterval.current);
     }
-    setIsNamingVoice(true);
   };
 
-  const saveNewVoice = () => {
-    if (newVoiceName.trim()) {
-      const newId = Date.now().toString();
-      const newVoice: VoiceProfile = {
-        id: newId,
-        name: newVoiceName.trim(),
-        status: "processing",
-      };
-      setVoices((prev) => [...prev, newVoice]);
-      setActiveVoice(newId);
+  // Submit voice to ElevenLabs for cloning
+  const saveNewVoice = async () => {
+    if (!newVoiceName.trim() || !audioBlob) return;
+
+    setIsProcessing(true);
+    setIsNamingVoice(false);
+
+    // Add optimistic entry
+    const tempId = `temp-${Date.now()}`;
+    const newVoice: VoiceProfile = {
+      id: tempId,
+      name: newVoiceName.trim(),
+      status: "processing",
+      samples: [{ filename: "Recording", date: new Date().toLocaleDateString() }],
+    };
+    setVoices((prev) => [...prev, newVoice]);
+
+    try {
+      const formData = new FormData();
+      formData.append("name", newVoiceName.trim());
+      formData.append("audio", audioBlob);
+
+      const response = await fetch("/api/voice-clone", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create voice");
+      }
+
+      // Update with real voice ID
+      setVoices((prev) =>
+        prev.map((v) =>
+          v.id === tempId
+            ? { ...v, id: data.voice_id, status: "ready" }
+            : v
+        )
+      );
+      setActiveVoice(data.voice_id);
+    } catch (error) {
+      console.error("Voice clone failed:", error);
+      alert(`Voice cloning failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      setVoices((prev) =>
+        prev.map((v) =>
+          v.id === tempId ? { ...v, status: "failed" } : v
+        )
+      );
+    } finally {
+      setIsProcessing(false);
       setNewVoiceName("");
-      setIsNamingVoice(false);
+      setAudioBlob(null);
       setRecordingTime(0);
     }
   };
@@ -142,6 +244,69 @@ export default function SettingsPage() {
     setIsNamingVoice(false);
     setNewVoiceName("");
     setRecordingTime(0);
+    setAudioBlob(null);
+  };
+
+  // Preview voice with TTS
+  const previewVoice = async (voiceId: string) => {
+    if (voiceId === "default") {
+      alert("Default narrator cannot be previewed.");
+      return;
+    }
+
+    setPreviewingVoiceId(voiceId);
+    try {
+      const response = await fetch("/api/voice-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          voiceId: voiceId,
+          text: "Hello, this is a preview of your cloned voice.",
+        }),
+      });
+
+      if (!response.ok) throw new Error("Preview failed");
+
+      const audioBlob = await response.blob();
+      const audio = new Audio(URL.createObjectURL(audioBlob));
+      audio.onended = () => setPreviewingVoiceId(null);
+      audio.play();
+    } catch (error) {
+      console.error("Preview failed:", error);
+      alert("Failed to preview voice.");
+      setPreviewingVoiceId(null);
+    }
+  };
+
+  // Delete voice
+  const deleteVoice = async (voiceId: string) => {
+    if (voiceId === "default") return;
+    if (!confirm("Are you sure you want to delete this voice?")) return;
+
+    try {
+      const response = await fetch("/api/voice-delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voiceId: voiceId }),
+      });
+
+      if (response.ok) {
+        setVoices((prev) => prev.filter((v) => v.id !== voiceId));
+        if (activeVoice === voiceId) {
+          setActiveVoice("default");
+        }
+      }
+    } catch (error) {
+      console.error("Delete failed:", error);
+    }
+  };
+
+  // Save algorithm settings
+  const handleSaveAlgorithmSettings = () => {
+    const settings = { fixationCooldown, noveltyWeight, sundowningTime };
+    localStorage.setItem(ALGORITHM_SETTINGS_KEY, JSON.stringify(settings));
+    setSaveMessage("Settings saved!");
+    setTimeout(() => setSaveMessage(null), 2000);
   };
 
   const handleRemoveItem = (id: string) => {
@@ -152,20 +317,17 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    const validImageTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-    ];
-    const validVideoTypes = ["video/mp4", "video/webm"];
+    // Validate file type - expanded support
+    const validImageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    const validVideoTypes = ["video/mp4", "video/webm", "video/quicktime"];
+    const validAudioTypes = ["audio/mpeg", "audio/wav", "audio/mp3", "audio/x-wav"];
 
     const isImage = validImageTypes.includes(file.type);
     const isVideo = validVideoTypes.includes(file.type);
+    const isAudio = validAudioTypes.includes(file.type);
 
-    if (!isImage && !isVideo) {
-      alert("Unsupported file format. Please upload JPG, PNG, WEBP, or MP4.");
+    if (!isImage && !isVideo && !isAudio) {
+      alert("Unsupported file format. Please upload JPG, PNG, MP4, MOV, MP3, or WAV.");
       return;
     }
 
@@ -194,23 +356,36 @@ export default function SettingsPage() {
         data: { publicUrl },
       } = supabase.storage.from("media-assets").getPublicUrl(fileName);
 
-      // 3. Analyze
-      const response = await fetch("/api/analyze-media", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileUrl: publicUrl,
-          mediaType: isImage ? "image" : "video",
-        }),
-      });
+      // 3. Analyze (only for images/videos)
+      if (isAudio) {
+        setQueueItems((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? {
+                ...item,
+                status: "ready",
+                description: "Audio file uploaded successfully.",
+                url: publicUrl,
+              }
+              : item
+          )
+        );
+      } else {
+        const response = await fetch("/api/analyze-media", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileUrl: publicUrl,
+            mediaType: isImage ? "image" : "video",
+          }),
+        });
 
-      const analysis = await response.json();
+        const analysis = await response.json();
 
-      // 4. Update Item
-      setQueueItems((prev) =>
-        prev.map((item) =>
-          item.id === tempId
-            ? {
+        setQueueItems((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? {
                 ...item,
                 status: "needs_review",
                 description: analysis.summary || "No description available",
@@ -218,22 +393,22 @@ export default function SettingsPage() {
                 date: analysis.date,
                 url: publicUrl,
               }
-            : item,
-        ),
-      );
+              : item
+          )
+        );
+      }
     } catch (error) {
       console.error(error);
       setQueueItems((prev) =>
         prev.map((item) =>
           item.id === tempId
             ? {
-                ...item,
-                status: "failed",
-                description:
-                  "Failed to process file. Note: Raw formats like DNG are not supported.",
-              }
-            : item,
-        ),
+              ...item,
+              status: "failed",
+              description: "Failed to process file.",
+            }
+            : item
+        )
       );
     }
   };
@@ -297,7 +472,6 @@ export default function SettingsPage() {
       <div className="settings-overlay">
         <div className="settings-modal">
           <div className="modal-header">
-            <div className="logo-placeholder">e</div>
             <h1>Settings</h1>
             <button className="close-btn" onClick={handleClose}>
               ×
@@ -343,7 +517,6 @@ export default function SettingsPage() {
             <button className="back-btn" onClick={handleBack}>
               ←
             </button>
-            <div className="logo-placeholder">e</div>
             <h1>Media Management</h1>
             <button className="close-btn" onClick={handleClose}>
               ×
@@ -351,7 +524,6 @@ export default function SettingsPage() {
           </div>
 
           <div className="modal-content">
-            <h2 className="section-title">Media Management</h2>
 
             <div
               className="upload-zone"
@@ -362,11 +534,11 @@ export default function SettingsPage() {
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileUpload}
-                accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
+                accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav"
                 hidden
               />
               <div className="upload-icon">↑</div>
-              <p>Drop photos/videos here or click to upload</p>
+              <p>Drop photos/videos/audio here or click to upload</p>
               <button className="choose-files-btn">Choose Files</button>
             </div>
 
@@ -392,7 +564,9 @@ export default function SettingsPage() {
                           ? "Analyzing..."
                           : item.status === "failed"
                             ? "Failed"
-                            : "Synthesizing..."}
+                            : item.status === "ready"
+                              ? "Ready"
+                              : "Synthesizing..."}
                     </span>
                     <button
                       className="queue-remove-btn"
@@ -456,7 +630,6 @@ export default function SettingsPage() {
             <button className="back-btn" onClick={handleBack}>
               ←
             </button>
-            <div className="logo-placeholder">e</div>
             <h1>Algorithm Calibration</h1>
             <button className="close-btn" onClick={handleClose}>
               ×
@@ -536,7 +709,15 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <button className="save-btn">Save Settings</button>
+            {saveMessage && (
+              <div className="save-message" style={{ color: "var(--accent)", textAlign: "center", marginBottom: "0.5rem" }}>
+                ✓ {saveMessage}
+              </div>
+            )}
+
+            <button className="save-btn" onClick={handleSaveAlgorithmSettings}>
+              Save Settings
+            </button>
           </div>
         </div>
       </div>
@@ -552,7 +733,6 @@ export default function SettingsPage() {
             <button className="back-btn" onClick={handleBack}>
               ←
             </button>
-            <div className="logo-placeholder">e</div>
             <h1>Neural Proxy</h1>
             <button className="close-btn" onClick={handleClose}>
               ×
@@ -567,20 +747,55 @@ export default function SettingsPage() {
               <select
                 className="voice-select-dropdown"
                 value={activeVoice}
-                onChange={(e) => {
-                  const newVoiceId = e.target.value;
-                  setActiveVoice(newVoiceId);
-                  localStorage.setItem("active_voice_id", newVoiceId);
-                }}
-                disabled={isRecording || isNamingVoice}
+                onChange={(e) => setActiveVoice(e.target.value)}
+                disabled={isRecording || isNamingVoice || isProcessing}
               >
                 {voices.map((voice) => (
                   <option key={voice.id} value={voice.id}>
                     {voice.name}{" "}
-                    {voice.status === "ready" ? "(Ready)" : "(Processing...)"}
+                    {voice.status === "ready"
+                      ? "(Ready)"
+                      : voice.status === "processing"
+                        ? "(Processing...)"
+                        : voice.status === "failed"
+                          ? "(Failed)"
+                          : "(Pending)"}
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* Voice List with Preview/Delete */}
+            <div className="voice-list" style={{ marginTop: "1rem" }}>
+              {voices.filter(v => v.id !== "default").map((voice) => (
+                <div key={voice.id} className={`voice-item ${activeVoice === voice.id ? "active" : ""}`}>
+                  <div style={{ flex: 1 }}>
+                    <span className="voice-name">{voice.name}</span>
+                    <span className={`voice-status ${voice.status}`} style={{ marginLeft: "0.5rem" }}>
+                      {voice.status === "ready" ? "✓ Ready" : voice.status === "processing" ? "⏳ Processing..." : "✗ Failed"}
+                    </span>
+                  </div>
+                  {voice.status === "ready" && (
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <button
+                        className="action-btn edit"
+                        onClick={() => previewVoice(voice.id)}
+                        disabled={previewingVoiceId === voice.id}
+                        style={{ fontSize: "0.75rem", padding: "0.375rem 0.75rem" }}
+                      >
+                        {previewingVoiceId === voice.id ? "Playing..." : "▶ Preview"}
+                      </button>
+                      <button
+                        className="action-btn edit"
+                        onClick={() => deleteVoice(voice.id)}
+                        style={{ fontSize: "0.75rem", padding: "0.375rem 0.75rem", color: "#e57373" }}
+                      >
+                        ✗ Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
 
             <hr
@@ -588,12 +803,20 @@ export default function SettingsPage() {
               style={{ margin: "1.5rem 0", borderColor: "var(--border)" }}
             />
 
+            <h3 className="section-title" style={{ marginBottom: "0.5rem" }}>
+              Add New Voice
+            </h3>
+            <p className="setting-hint">
+              Record exactly 1 minute of clear speech. Recording will auto-stop at 1:00.
+            </p>
+
             <div className="recording-section">
               {!isNamingVoice ? (
                 <>
                   <button
                     className={`recording-circle ${isRecording ? "recording" : ""}`}
                     onClick={isRecording ? stopRecording : startRecording}
+                    disabled={isProcessing}
                   >
                     {isRecording ? "■" : "🎤"}
                   </button>
@@ -602,8 +825,10 @@ export default function SettingsPage() {
                   </p>
                   <p className="recording-hint">
                     {isRecording
-                      ? "Recording... Tap to stop"
-                      : "Tap microphone to record a new voice"}
+                      ? "Recording... Must reach 1:00 to save"
+                      : isProcessing
+                        ? "Processing voice..."
+                        : "Tap microphone to start recording"}
                   </p>
                 </>
               ) : (
@@ -632,7 +857,7 @@ export default function SettingsPage() {
                       style={{ marginTop: 0 }}
                       disabled={!newVoiceName.trim()}
                     >
-                      Save Voice
+                      Clone Voice
                     </button>
                   </div>
                 </div>
