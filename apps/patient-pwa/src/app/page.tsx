@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/supabase";
+import { videoCache } from "../services/videoCache";
 
 interface Memory {
   id: string;
@@ -34,7 +35,7 @@ export default function PatientView() {
   } | null>(null);
   const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Local interaction tracking (immediate UI feedback)
+  // Local interaction tracking
   const [likedMemories, setLikedMemories] = useState<Set<string>>(new Set());
   const [recalledMemories, setRecalledMemories] = useState<Set<string>>(
     new Set(),
@@ -46,14 +47,12 @@ export default function PatientView() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // 1. Fetch Patient ID
-  // 1. Fetch Patient ID (Auto-create if missing for Hackathon ease)
   useEffect(() => {
     const getPatient = async () => {
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
-
         if (user) {
           let { data } = await supabase
             .from("patients")
@@ -62,7 +61,6 @@ export default function PatientView() {
             .single();
 
           if (!data) {
-            // Create profile if missing
             const { data: newPatient } = await supabase
               .from("patients")
               .insert({
@@ -88,16 +86,12 @@ export default function PatientView() {
     getPatient();
   }, []);
 
-  // 2. Fetch Memories (Algorithm)
+  // 2. Fetch Memories
   useEffect(() => {
     if (!patientId) return;
 
     const fetchMemories = async () => {
       try {
-        const now = new Date().toISOString();
-
-        // Complex query: Approved status + Cooldown filter (client-side filter for simplicity with OR logic)
-        // Sort by engagement_count ASC (Novelty)
         const { data, error } = await supabase
           .from("memories")
           .select("*, media_assets!inner(*)")
@@ -107,17 +101,14 @@ export default function PatientView() {
 
         if (error) throw error;
 
-        // Filter for cooldown
         const filtered = data.filter((m: any) => {
           if (!m.cooldown_until) return true;
           return new Date(m.cooldown_until) < new Date();
         });
 
-        // If no memories, maybe show demo/empty state
         if (filtered.length > 0) {
           setMemories(filtered);
         } else {
-          // Fallback to empty to show placeholder
           setMemories([]);
         }
       } catch (err) {
@@ -130,6 +121,54 @@ export default function PatientView() {
     fetchMemories();
   }, [patientId]);
 
+  // 2a. Buffered Pre-fetch (Sora 2 Videos)
+  useEffect(() => {
+    if (memories.length === 0) return;
+
+    const prefetch = async () => {
+      // Buffer next 3 items
+      for (let i = 0; i < 3; i++) {
+        const index = (currentIndex + i) % memories.length;
+        const memory = memories[index];
+
+        if (memory.media_assets.type === "photo") {
+          try {
+            const cached = await videoCache.get(memory.id);
+            if (!cached) {
+              // Generate URL
+              const res = await fetch("/api/generate-video", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  imageUrl: memory.media_assets.public_url,
+                }),
+              });
+              const data = await res.json();
+
+              if (data.videoUrl) {
+                // Fetch Blob
+                const vidRes = await fetch(data.videoUrl);
+                const blob = await vidRes.blob();
+                // Store in Cache
+                await videoCache.put(memory.id, blob);
+                console.log(`Pre-fetched video for ${memory.id}`);
+              }
+            }
+          } catch (e) {
+            console.error("Pre-fetch failed", e);
+          }
+        }
+      }
+    };
+
+    // Low Priority Execution
+    if ("requestIdleCallback" in window) {
+      (window as any).requestIdleCallback(prefetch);
+    } else {
+      setTimeout(prefetch, 2000);
+    }
+  }, [memories, currentIndex]);
+
   const currentMemory = memories[currentIndex];
   // Determine if Liked/Recalled (Local State checks)
   const isLiked = currentMemory ? likedMemories.has(currentMemory.id) : false;
@@ -139,7 +178,6 @@ export default function PatientView() {
 
   // 3. Narration Logic
   useEffect(() => {
-    // Reset
     setNarrationScript(null);
     setNarrationAudio(null);
     if (audioRef.current) {
@@ -148,20 +186,16 @@ export default function PatientView() {
     }
 
     if (!currentMemory) return;
-
-    // RULE: Skip narration if video
     if (currentMemory.media_assets.type === "video") return;
 
-    // Use persisted data if available
     if (currentMemory.script && currentMemory.audio_url) {
       setNarrationScript(currentMemory.script);
       setNarrationAudio(currentMemory.audio_url);
       return;
     }
 
-    // Generate if missing
     const generate = async () => {
-      const voiceId = localStorage.getItem("active_voice_id") || "1";
+      const voiceId = localStorage.getItem("active_voice_id") || "default";
       try {
         const response = await fetch("/api/generate-narrator", {
           method: "POST",
@@ -175,8 +209,6 @@ export default function PatientView() {
         if (data.script && data.audioUrl) {
           setNarrationScript(data.script);
           setNarrationAudio(data.audioUrl);
-
-          // Persist to DB
           await supabase
             .from("memories")
             .update({ script: data.script, audio_url: data.audioUrl })
@@ -187,12 +219,10 @@ export default function PatientView() {
       }
     };
 
-    // Delay
     const timer = setTimeout(generate, 500);
     return () => clearTimeout(timer);
   }, [currentIndex, currentMemory]);
 
-  // Auto-play
   useEffect(() => {
     if (narrationAudio && audioRef.current) {
       audioRef.current.play().catch((e) => console.log("Autoplay blocked", e));
@@ -204,14 +234,12 @@ export default function PatientView() {
     e.stopPropagation();
     if (!currentMemory || !patientId) return;
 
-    // Update Local
     setLikedMemories((prev) => {
       const next = new Set(prev);
       next.add(currentMemory.id);
       return next;
     });
 
-    // Update DB: Cooldown +24h
     const tomorrow = new Date();
     tomorrow.setHours(tomorrow.getHours() + 24);
 
@@ -240,7 +268,6 @@ export default function PatientView() {
       return next;
     });
 
-    // Update DB: Cooldown +7 days
     const nextWeek = new Date();
     nextWeek.setDate(nextWeek.getDate() + 7);
 
@@ -259,7 +286,7 @@ export default function PatientView() {
     });
   };
 
-  // 5. Navigation & Video Gen
+  // 5. Navigation & Instant Playback
   const nextMemory = () => {
     setGeneratedVideo(null);
     if (!memories.length) return;
@@ -268,7 +295,52 @@ export default function PatientView() {
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart({ y: e.touches[0].clientY, time: Date.now() });
-    holdTimerRef.current = setTimeout(handleGenerateVideo, 2000);
+
+    // Gate: 500ms Long Press for Instant Playback
+    holdTimerRef.current = setTimeout(async () => {
+      if (!currentMemory) return;
+
+      // 1. Check Cache
+      const blob = await videoCache.get(currentMemory.id);
+
+      if (blob) {
+        // Instant Play
+        const url = URL.createObjectURL(blob);
+        setGeneratedVideo(url);
+
+        // Tactile confirmation
+        if (navigator.vibrate) navigator.vibrate(50);
+
+        if (patientId) {
+          await supabase.from("interactions").insert({
+            patient_id: patientId,
+            memory_id: currentMemory.id,
+            interaction_type: "video_generated",
+          });
+        }
+      } else {
+        // Fallback: Generate on demand
+        handleGenerateVideo();
+      }
+    }, 500);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    // Stop Video on Release (Revert to Image)
+    if (generatedVideo) {
+      setGeneratedVideo(null); // Instant revert
+    }
+
+    if (!touchStart) return;
+
+    const diff = touchStart.y - e.changedTouches[0].clientY;
+    if (diff > 50 && Date.now() - touchStart.time < 300) nextMemory();
+    setTouchStart(null);
   };
 
   const handleTouchMove = () => {
@@ -278,22 +350,8 @@ export default function PatientView() {
     }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-    if (!touchStart) return;
-
-    const diff = touchStart.y - e.changedTouches[0].clientY;
-    if (diff > 50 && Date.now() - touchStart.time < 300) nextMemory();
-    setTouchStart(null);
-  };
-
   const handleGenerateVideo = async () => {
     if (isGeneratingVideo || generatedVideo || !currentMemory) return;
-
-    // Skip if already video
     if (currentMemory.media_assets.type === "video") return;
 
     setIsGeneratingVideo(true);
@@ -377,12 +435,10 @@ export default function PatientView() {
         />
       )}
 
-      {/* Settings Link */}
       <Link href="/settings" className="settings-button">
         ⚙️
       </Link>
 
-      {/* Interaction Sidebar */}
       <div className="interaction-sidebar">
         <div className="interaction-item">
           <button
@@ -406,7 +462,6 @@ export default function PatientView() {
         </div>
       </div>
 
-      {/* Info Pills */}
       <div className="memory-info">
         {currentMemory.media_assets.metadata.date && (
           <span className="pill">
@@ -420,15 +475,13 @@ export default function PatientView() {
         )}
       </div>
 
-      {/* Video Generation Overlay */}
       {isGeneratingVideo && (
         <div className="video-overlay">
           <div className="text-4xl mb-4 loading">🎬</div>
-          <p className="text-lg font-medium">Generating Video...</p>
+          <p className="text-lg font-medium">Downloading Video...</p>
         </div>
       )}
 
-      {/* Narration */}
       <audio ref={audioRef} src={narrationAudio || ""} />
       {narrationScript && (
         <div className="caption-overlay">{narrationScript}</div>
