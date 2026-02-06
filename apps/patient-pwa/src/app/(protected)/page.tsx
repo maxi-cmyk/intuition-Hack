@@ -663,13 +663,8 @@ export default function PatientView() {
       {/* Settings Gear - Top Right */}
       <Link
         href="/settings"
-<<<<<<< HEAD
-        className="absolute top-10 right-10 z-50 w-[60px] h-[60px] flex items-center justify-center rounded-full bg-black/30 backdrop-blur-sm border border-white/10 transition-all hover:bg-black/50"
-        style={{ boxShadow: "0 0 20px rgba(149, 180, 139, 0.3)" }}
-        onClick={(e) => e.stopPropagation()}
-=======
         className="absolute top-6 right-6 z-50 w-[48px] h-[48px] flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm border border-white/20 transition-all hover:bg-black/60"
->>>>>>> 762b811 (Improved Ui and added recall logic)
+        onClick={(e) => e.stopPropagation()}
       >
         <SettingsIcon className="w-6 h-6 text-white" />
       </Link>
@@ -783,10 +778,10 @@ export default function PatientView() {
       )}
 
       {/* Audio Element */}
-{narrationAudio && <audio ref={audioRef} src={narrationAudio} autoPlay />}
+      {narrationAudio && <audio ref={audioRef} src={narrationAudio} autoPlay />}
 
-  {/* Hide scrollbar and custom animations */ }
-  <style jsx global>{`
+      {/* Hide scrollbar and custom animations */}
+      <style jsx global>{`
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
         }
