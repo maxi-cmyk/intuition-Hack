@@ -86,31 +86,25 @@ export default function PatientView() {
     getPatient();
   }, []);
 
-  // 2. Fetch Memories
+  // 2. Fetch Memories (run immediately, don't wait for patientId)
   useEffect(() => {
-    if (!patientId) return;
-
     const fetchMemories = async () => {
       try {
         const { data, error } = await supabase
           .from("memories")
           .select("*, media_assets!inner(*)")
           .eq("status", "approved")
-          .order("engagement_count", { ascending: true })
+          .order("created_at", { ascending: false })
           .limit(20);
 
         if (error) throw error;
 
-        const filtered = data.filter((m: any) => {
+        const filtered = (data || []).filter((m: any) => {
           if (!m.cooldown_until) return true;
           return new Date(m.cooldown_until) < new Date();
         });
 
-        if (filtered.length > 0) {
-          setMemories(filtered);
-        } else {
-          setMemories([]);
-        }
+        setMemories(filtered);
       } catch (err) {
         console.error("Fetch memories failed", err);
       } finally {
@@ -119,7 +113,7 @@ export default function PatientView() {
     };
 
     fetchMemories();
-  }, [patientId]);
+  }, []);
 
   // 2a. Buffered Pre-fetch (Sora 2 Videos)
   useEffect(() => {
@@ -188,6 +182,7 @@ export default function PatientView() {
     if (!currentMemory) return;
     if (currentMemory.media_assets.type === "video") return;
 
+    // If script and audio already exist, use them directly
     if (currentMemory.script && currentMemory.audio_url) {
       setNarrationScript(currentMemory.script);
       setNarrationAudio(currentMemory.audio_url);
@@ -196,26 +191,54 @@ export default function PatientView() {
 
     const generate = async () => {
       const voiceId = localStorage.getItem("active_voice_id") || "default";
-      try {
-        const response = await fetch("/api/generate-narrator", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageUrl: currentMemory.media_assets.public_url,
-            voiceId,
-          }),
-        });
-        const data = await response.json();
-        if (data.script && data.audioUrl) {
-          setNarrationScript(data.script);
-          setNarrationAudio(data.audioUrl);
-          await supabase
-            .from("memories")
-            .update({ script: data.script, audio_url: data.audioUrl })
-            .eq("id", currentMemory.id);
+
+      // Use existing script if provided by user, otherwise generate from image
+      let script = currentMemory.script || "";
+
+      if (!script) {
+        // No user-provided script, generate from image analysis
+        try {
+          const response = await fetch("/api/generate-narrator", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              imageUrl: currentMemory.media_assets.public_url,
+              voiceId,
+            }),
+          });
+          const data = await response.json();
+          if (data.script) {
+            script = data.script;
+          }
+          if (data.script && data.audioUrl) {
+            setNarrationScript(data.script);
+            setNarrationAudio(data.audioUrl);
+            await supabase
+              .from("memories")
+              .update({ script: data.script, audio_url: data.audioUrl })
+              .eq("id", currentMemory.id);
+            return;
+          }
+        } catch (e) {
+          console.error("Narration gen error", e);
         }
-      } catch (e) {
-        console.error("Narration gen error", e);
+      } else {
+        // User provided script, just generate audio for it
+        setNarrationScript(script);
+        try {
+          const response = await fetch("/api/voice-preview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ voiceId, text: script }),
+          });
+          if (response.ok) {
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            setNarrationAudio(audioUrl);
+          }
+        } catch (e) {
+          console.error("TTS error", e);
+        }
       }
     };
 

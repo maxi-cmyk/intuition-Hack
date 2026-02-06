@@ -38,6 +38,12 @@ export default function SettingsPage() {
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Add Detail modal state
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editDescription, setEditDescription] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+
   // Algorithm settings
   const [fixationCooldown, setFixationCooldown] = useState(24);
   const [noveltyWeight, setNoveltyWeight] = useState(50);
@@ -339,6 +345,58 @@ export default function SettingsPage() {
         ),
       );
     }
+  };
+
+  const handleSaveDetail = async () => {
+    if (!editingItemId) return;
+
+    // Update local state
+    setQueueItems((prev) =>
+      prev.map((item) =>
+        item.id === editingItemId
+          ? { ...item, description: editDescription, date: editDate, people: editLocation }
+          : item,
+      ),
+    );
+
+    // Update Supabase - memories for script, media_assets for metadata
+    try {
+      // Update script in memories
+      const { error: memError } = await supabase
+        .from("memories")
+        .update({ script: editDescription })
+        .eq("id", editingItemId);
+      if (memError) throw memError;
+
+      // Get the media_asset_id for this memory
+      const { data: memory } = await supabase
+        .from("memories")
+        .select("media_asset_id")
+        .eq("id", editingItemId)
+        .single();
+
+      if (memory?.media_asset_id) {
+        // Update metadata in media_assets
+        const { error: assetError } = await supabase
+          .from("media_assets")
+          .update({
+            metadata: {
+              summary: editDescription,
+              date: editDate,
+              location: editLocation,
+            },
+          })
+          .eq("id", memory.media_asset_id);
+        if (assetError) throw assetError;
+      }
+    } catch (err) {
+      console.error("Failed to save detail", err);
+    }
+
+    setEditingItemId(null);
+    setEditDescription("");
+    setEditDate("");
+    setEditLocation("");
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -666,7 +724,18 @@ export default function SettingsPage() {
                       >
                         Greenlight
                       </button>
-                      <button className="action-btn edit">Edit Script</button>
+                      <button
+                        className="action-btn edit"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingItemId(item.id);
+                          setEditDescription(item.description || "");
+                          setEditDate(item.date || "");
+                          setEditLocation(item.people || "");
+                        }}
+                      >
+                        Add Detail
+                      </button>
                     </div>
                   )}
                 </div>
@@ -674,6 +743,68 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+
+        {/* Add Detail Modal */}
+        {editingItemId && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-surface-dark rounded-xl p-6 w-full max-w-md">
+              <h2 className="text-xl font-bold mb-4">Add Detail</h2>
+              <p className="text-text-muted text-sm mb-4">
+                Add details that the narrator will read aloud for this memory.
+              </p>
+
+              <label className="block text-sm text-text-muted mb-1">Description</label>
+              <textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Describe this memory..."
+                className="w-full h-24 p-3 rounded-lg bg-surface-darker border border-white/10 text-white resize-none mb-4"
+              />
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="block text-sm text-text-muted mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    className="w-full p-3 rounded-lg bg-surface-darker border border-white/10 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-text-muted mb-1">Location</label>
+                  <input
+                    type="text"
+                    value={editLocation}
+                    onChange={(e) => setEditLocation(e.target.value)}
+                    placeholder="e.g. Beach, Home"
+                    className="w-full p-3 rounded-lg bg-surface-darker border border-white/10 text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setEditingItemId(null);
+                    setEditDescription("");
+                    setEditDate("");
+                    setEditLocation("");
+                  }}
+                  className="flex-1 py-3 rounded-lg bg-surface-darker text-text-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveDetail}
+                  className="flex-1 py-3 rounded-lg bg-accent text-black font-medium"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -30,7 +30,7 @@ export async function POST(req: Request) {
           content: [
             {
               type: "text",
-              text: "Analyze this image for a reminiscence therapy app for patients with dementia. Provide a brief, warm, and engaging summary of what is happening. Also identify who is likely in the photo (e.g. 'two young grandchildren', 'a daughter', 'friends') - use generic relationship terms. Estimate the date or season if visual cues exist (e.g. 'Christmas 2023' or 'Summer afternoon'). Return strictly valid JSON with keys: 'summary', 'people', 'date'.",
+              text: "extract the metadata of the file, and output it as a JSON object with keys: 'date' and 'location', and if you can't extract it return null."
             },
             {
               type: "image_url",

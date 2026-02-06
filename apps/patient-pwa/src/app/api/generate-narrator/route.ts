@@ -22,7 +22,7 @@ export async function POST(req: Request) {
           content: [
             {
               type: "text",
-              text: "Write a very short, warm, reminiscent narration (1 sentences) for this photo, addressing the viewer as 'you'. It should sound like a gentle familiar memory.",
+              text: "Write a very short, warm, reminiscent narration (max 15 words) for this photo, addressing the viewer as 'you'. It should sound like a gentle familiar memory. make it descriptive and also simple as the person is very confused. You are a kind parent explaining a picture to a child very simply",
             },
             {
               type: "image_url",
