@@ -2,41 +2,30 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { supabase } from "../lib/supabase";
 
 interface Memory {
   id: string;
-  imageUrl: string;
-  date: string;
-  location: string;
+  script?: string;
+  audio_url?: string;
+  media_assets: {
+    public_url: string;
+    type: "photo" | "video";
+    metadata: {
+      summary?: string;
+      date?: string;
+      location?: string;
+    };
+  };
 }
 
-// Demo memories
-const demoMemories: Memory[] = [
-  {
-    id: "1",
-    imageUrl:
-      "https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=800",
-    date: "12-15-2023",
-    location: "Paris, France",
-  },
-  {
-    id: "2",
-    imageUrl:
-      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800",
-    date: "06-20-1985",
-    location: "Central Park, NY",
-  },
-  {
-    id: "3",
-    imageUrl:
-      "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800",
-    date: "08-14-1992",
-    location: "Beach House",
-  },
-];
-
 export default function PatientView() {
+  const [memories, setMemories] = useState<Memory[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [patientId, setPatientId] = useState<string | null>(null);
+
+  // Interaction State
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
   const [touchStart, setTouchStart] = useState<{
@@ -45,7 +34,7 @@ export default function PatientView() {
   } | null>(null);
   const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Interaction State
+  // Local interaction tracking (immediate UI feedback)
   const [likedMemories, setLikedMemories] = useState<Set<string>>(new Set());
   const [recalledMemories, setRecalledMemories] = useState<Set<string>>(
     new Set(),
@@ -56,116 +45,101 @@ export default function PatientView() {
   const [narrationAudio, setNarrationAudio] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const currentMemory = demoMemories[currentIndex];
-  const isLiked = likedMemories.has(currentMemory.id);
-  const isRecalled = recalledMemories.has(currentMemory.id);
-
-  const toggleLike = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setLikedMemories((prev) => {
-      const next = new Set(prev);
-      if (next.has(currentMemory.id)) {
-        next.delete(currentMemory.id);
-        console.log(`Memory ${currentMemory.id} unliked.`);
-      } else {
-        next.add(currentMemory.id);
-        console.log(
-          `Memory ${currentMemory.id} liked. Cooldown increased (Reverse TikTok logic).`,
-        );
-      }
-      return next;
-    });
-  };
-
-  const toggleRecall = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setRecalledMemories((prev) => {
-      const next = new Set(prev);
-      if (next.has(currentMemory.id)) {
-        next.delete(currentMemory.id);
-      } else {
-        next.add(currentMemory.id);
-        console.log(
-          `Memory ${currentMemory.id} marked for recall. Scheduled for future resurfacing.`,
-        );
-      }
-      return next;
-    });
-  };
-
-  // Handle swipe up to next memory
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStart({
-      y: e.touches[0].clientY,
-      time: Date.now(),
-    });
-
-    // Start hold timer for video generation
-    holdTimerRef.current = setTimeout(() => {
-      handleGenerateVideo();
-    }, 2000);
-  };
-
-  const handleTouchMove = () => {
-    // Cancel hold if user moves
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    // Cancel hold timer
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-
-    if (!touchStart) return;
-
-    const touchEnd = e.changedTouches[0].clientY;
-    const diff = touchStart.y - touchEnd;
-    const timeDiff = Date.now() - touchStart.time;
-
-    // Swipe up detection (minimum 50px, within 300ms)
-    if (diff > 50 && timeDiff < 300) {
-      nextMemory();
-    }
-
-    setTouchStart(null);
-  };
-
-  const nextMemory = () => {
-    setGeneratedVideo(null); // Reset video for next memory
-    setCurrentIndex((prev) => (prev + 1) % demoMemories.length);
-  };
-
-  const handleGenerateVideo = async () => {
-    if (isGeneratingVideo || generatedVideo) return;
-
-    setIsGeneratingVideo(true);
-    try {
-      const response = await fetch("/api/generate-video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl: demoMemories[currentIndex].imageUrl,
-        }),
-      });
-      const data = await response.json();
-      if (data.videoUrl) {
-        setGeneratedVideo(data.videoUrl);
-      }
-    } catch (error) {
-      console.error("Failed to generate video", error);
-    } finally {
-      setIsGeneratingVideo(false);
-    }
-  };
-
-  // Narration Effect
+  // 1. Fetch Patient ID
+  // 1. Fetch Patient ID (Auto-create if missing for Hackathon ease)
   useEffect(() => {
-    // Reset narration on memory change
+    const getPatient = async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (user) {
+          let { data } = await supabase
+            .from("patients")
+            .select("id")
+            .eq("clerk_id", user.id)
+            .single();
+
+          if (!data) {
+            // Create profile if missing
+            const { data: newPatient } = await supabase
+              .from("patients")
+              .insert({
+                clerk_id: user.id,
+                display_name: user.email?.split("@")[0] || "Patient",
+                pin_hash: "1234",
+              })
+              .select("id")
+              .single();
+            if (newPatient) data = newPatient;
+          }
+
+          if (data) setPatientId(data.id);
+          else setIsLoading(false);
+        } else {
+          setIsLoading(false);
+        }
+      } catch (e) {
+        console.error("Auth check failed", e);
+        setIsLoading(false);
+      }
+    };
+    getPatient();
+  }, []);
+
+  // 2. Fetch Memories (Algorithm)
+  useEffect(() => {
+    if (!patientId) return;
+
+    const fetchMemories = async () => {
+      try {
+        const now = new Date().toISOString();
+
+        // Complex query: Approved status + Cooldown filter (client-side filter for simplicity with OR logic)
+        // Sort by engagement_count ASC (Novelty)
+        const { data, error } = await supabase
+          .from("memories")
+          .select("*, media_assets!inner(*)")
+          .eq("status", "approved")
+          .order("engagement_count", { ascending: true })
+          .limit(20);
+
+        if (error) throw error;
+
+        // Filter for cooldown
+        const filtered = data.filter((m: any) => {
+          if (!m.cooldown_until) return true;
+          return new Date(m.cooldown_until) < new Date();
+        });
+
+        // If no memories, maybe show demo/empty state
+        if (filtered.length > 0) {
+          setMemories(filtered);
+        } else {
+          // Fallback to empty to show placeholder
+          setMemories([]);
+        }
+      } catch (err) {
+        console.error("Fetch memories failed", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMemories();
+  }, [patientId]);
+
+  const currentMemory = memories[currentIndex];
+  // Determine if Liked/Recalled (Local State checks)
+  const isLiked = currentMemory ? likedMemories.has(currentMemory.id) : false;
+  const isRecalled = currentMemory
+    ? recalledMemories.has(currentMemory.id)
+    : false;
+
+  // 3. Narration Logic
+  useEffect(() => {
+    // Reset
     setNarrationScript(null);
     setNarrationAudio(null);
     if (audioRef.current) {
@@ -173,14 +147,27 @@ export default function PatientView() {
       audioRef.current.currentTime = 0;
     }
 
-    const fetchNarration = async () => {
+    if (!currentMemory) return;
+
+    // RULE: Skip narration if video
+    if (currentMemory.media_assets.type === "video") return;
+
+    // Use persisted data if available
+    if (currentMemory.script && currentMemory.audio_url) {
+      setNarrationScript(currentMemory.script);
+      setNarrationAudio(currentMemory.audio_url);
+      return;
+    }
+
+    // Generate if missing
+    const generate = async () => {
       const voiceId = localStorage.getItem("active_voice_id") || "1";
       try {
         const response = await fetch("/api/generate-narrator", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            imageUrl: demoMemories[currentIndex].imageUrl,
+            imageUrl: currentMemory.media_assets.public_url,
             voiceId,
           }),
         });
@@ -188,38 +175,172 @@ export default function PatientView() {
         if (data.script && data.audioUrl) {
           setNarrationScript(data.script);
           setNarrationAudio(data.audioUrl);
+
+          // Persist to DB
+          await supabase
+            .from("memories")
+            .update({ script: data.script, audio_url: data.audioUrl })
+            .eq("id", currentMemory.id);
         }
-      } catch (error) {
-        console.error("Narration fetch failed", error);
+      } catch (e) {
+        console.error("Narration gen error", e);
       }
     };
 
-    // Small delay to allow transition
-    const timer = setTimeout(() => {
-      fetchNarration();
-    }, 500);
-
+    // Delay
+    const timer = setTimeout(generate, 500);
     return () => clearTimeout(timer);
-  }, [currentIndex]);
+  }, [currentIndex, currentMemory]);
 
-  // Auto-play audio when ready
+  // Auto-play
   useEffect(() => {
     if (narrationAudio && audioRef.current) {
-      audioRef.current.volume = 1.0;
-      audioRef.current
-        .play()
-        .catch((e) => console.log("Autoplay blocked/failed", e));
+      audioRef.current.play().catch((e) => console.log("Autoplay blocked", e));
     }
   }, [narrationAudio]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (holdTimerRef.current) {
-        clearTimeout(holdTimerRef.current);
+  // 4. Interactions
+  const toggleLike = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentMemory || !patientId) return;
+
+    // Update Local
+    setLikedMemories((prev) => {
+      const next = new Set(prev);
+      next.add(currentMemory.id);
+      return next;
+    });
+
+    // Update DB: Cooldown +24h
+    const tomorrow = new Date();
+    tomorrow.setHours(tomorrow.getHours() + 24);
+
+    await supabase
+      .from("memories")
+      .update({
+        cooldown_until: tomorrow.toISOString(),
+        engagement_count: (currentMemory as any).engagement_count + 1,
+      })
+      .eq("id", currentMemory.id);
+
+    await supabase.from("interactions").insert({
+      patient_id: patientId,
+      memory_id: currentMemory.id,
+      interaction_type: "like",
+    });
+  };
+
+  const toggleRecall = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentMemory || !patientId) return;
+
+    setRecalledMemories((prev) => {
+      const next = new Set(prev);
+      next.add(currentMemory.id);
+      return next;
+    });
+
+    // Update DB: Cooldown +7 days
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+
+    await supabase
+      .from("memories")
+      .update({
+        cooldown_until: nextWeek.toISOString(),
+        engagement_count: (currentMemory as any).engagement_count + 1,
+      })
+      .eq("id", currentMemory.id);
+
+    await supabase.from("interactions").insert({
+      patient_id: patientId,
+      memory_id: currentMemory.id,
+      interaction_type: "recall",
+    });
+  };
+
+  // 5. Navigation & Video Gen
+  const nextMemory = () => {
+    setGeneratedVideo(null);
+    if (!memories.length) return;
+    setCurrentIndex((prev) => (prev + 1) % memories.length);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart({ y: e.touches[0].clientY, time: Date.now() });
+    holdTimerRef.current = setTimeout(handleGenerateVideo, 2000);
+  };
+
+  const handleTouchMove = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    if (!touchStart) return;
+
+    const diff = touchStart.y - e.changedTouches[0].clientY;
+    if (diff > 50 && Date.now() - touchStart.time < 300) nextMemory();
+    setTouchStart(null);
+  };
+
+  const handleGenerateVideo = async () => {
+    if (isGeneratingVideo || generatedVideo || !currentMemory) return;
+
+    // Skip if already video
+    if (currentMemory.media_assets.type === "video") return;
+
+    setIsGeneratingVideo(true);
+    try {
+      const response = await fetch("/api/generate-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageUrl: currentMemory.media_assets.public_url,
+        }),
+      });
+      const data = await response.json();
+      if (data.videoUrl) setGeneratedVideo(data.videoUrl);
+
+      if (patientId) {
+        await supabase.from("interactions").insert({
+          patient_id: patientId,
+          memory_id: currentMemory.id,
+          interaction_type: "video_generated",
+        });
       }
-    };
-  }, []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsGeneratingVideo(false);
+    }
+  };
+
+  // UI
+  if (isLoading)
+    return (
+      <div className="flex h-screen items-center justify-center text-white">
+        Loading Memories...
+      </div>
+    );
+  if (memories.length === 0)
+    return (
+      <div className="flex flex-col h-screen items-center justify-center text-white p-6 text-center">
+        <p className="text-xl mb-4">No memories available yet.</p>
+        <Link
+          href="/settings"
+          className="px-4 py-2 bg-text-muted rounded-full text-black"
+        >
+          Go to Settings to Upload
+        </Link>
+      </div>
+    );
 
   return (
     <main
@@ -228,7 +349,7 @@ export default function PatientView() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Memory Image or Video */}
+      {/* Media Type Handling */}
       {generatedVideo ? (
         <video
           src={generatedVideo}
@@ -238,16 +359,25 @@ export default function PatientView() {
           muted
           playsInline
         />
+      ) : currentMemory.media_assets.type === "video" ? (
+        <video
+          src={currentMemory.media_assets.public_url}
+          className="memory-image"
+          autoPlay
+          loop
+          muted
+          playsInline
+        />
       ) : (
         <img
-          src={currentMemory.imageUrl}
+          src={currentMemory.media_assets.public_url}
           alt="Memory"
           className="memory-image"
           draggable={false}
         />
       )}
 
-      {/* Settings Button */}
+      {/* Settings Link */}
       <Link href="/settings" className="settings-button">
         ⚙️
       </Link>
@@ -264,7 +394,6 @@ export default function PatientView() {
             </svg>
           </button>
         </div>
-
         <div className="interaction-item">
           <button
             className={`interaction-btn recall ${isRecalled ? "active" : ""}`}
@@ -277,10 +406,18 @@ export default function PatientView() {
         </div>
       </div>
 
-      {/* Bottom Info with Date/Location Pills */}
+      {/* Info Pills */}
       <div className="memory-info">
-        <span className="pill">{currentMemory.date}</span>
-        <span className="pill">{currentMemory.location}</span>
+        {currentMemory.media_assets.metadata.date && (
+          <span className="pill">
+            {currentMemory.media_assets.metadata.date}
+          </span>
+        )}
+        {currentMemory.media_assets.metadata.location && (
+          <span className="pill">
+            {currentMemory.media_assets.metadata.location}
+          </span>
+        )}
       </div>
 
       {/* Video Generation Overlay */}
@@ -288,20 +425,18 @@ export default function PatientView() {
         <div className="video-overlay">
           <div className="text-4xl mb-4 loading">🎬</div>
           <p className="text-lg font-medium">Generating Video...</p>
-          <p className="text-sm text-text-muted mt-2">Hold to cancel</p>
         </div>
       )}
 
-      {/* Swipe Indicator (shown briefly) */}
-      <div className="absolute bottom-24 left-1/2 -translate-x-1/2 text-text-muted text-sm opacity-50">
-        ↑ Swipe up for next
-      </div>
-
-      {/* Narration Audio & Captions */}
+      {/* Narration */}
       <audio ref={audioRef} src={narrationAudio || ""} />
       {narrationScript && (
         <div className="caption-overlay">{narrationScript}</div>
       )}
+
+      <div className="absolute bottom-24 left-1/2 -translate-x-1/2 text-text-muted text-sm opacity-50">
+        ↑ Swipe up
+      </div>
     </main>
   );
 }

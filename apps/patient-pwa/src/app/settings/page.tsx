@@ -313,6 +313,34 @@ export default function SettingsPage() {
     setQueueItems((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const handleGreenlight = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    // Optimistic Update
+    setQueueItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, status: "ready" } : item,
+      ),
+    );
+
+    // DB Update
+    try {
+      const { error } = await supabase
+        .from("memories")
+        .update({ status: "approved" })
+        .eq("id", id);
+      if (error) throw error;
+    } catch (err) {
+      console.error("Failed to approve memory", err);
+      // Revert if needed, but for MVP just log
+      setQueueItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, status: "needs_review" } : item,
+        ),
+      );
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -356,47 +384,73 @@ export default function SettingsPage() {
         data: { publicUrl },
       } = supabase.storage.from("media-assets").getPublicUrl(fileName);
 
-      // 3. Analyze (only for images/videos)
-      if (isAudio) {
-        setQueueItems((prev) =>
-          prev.map((item) =>
-            item.id === tempId
-              ? {
-                ...item,
-                status: "ready",
-                description: "Audio file uploaded successfully.",
-                url: publicUrl,
-              }
-              : item
-          )
-        );
-      } else {
-        const response = await fetch("/api/analyze-media", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileUrl: publicUrl,
-            mediaType: isImage ? "image" : "video",
-          }),
-        });
+      // 3. Analyze (Skip for video, partial for image)
+      let analysis = { summary: "", people: "", date: "" };
 
-        const analysis = await response.json();
-
-        setQueueItems((prev) =>
-          prev.map((item) =>
-            item.id === tempId
-              ? {
-                ...item,
-                status: "needs_review",
-                description: analysis.summary || "No description available",
-                people: analysis.people,
-                date: analysis.date,
-                url: publicUrl,
-              }
-              : item
-          )
-        );
+      if (isImage) {
+        try {
+          const response = await fetch("/api/analyze-media", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileUrl: publicUrl,
+              mediaType: "image",
+            }),
+          });
+          const data = await response.json();
+          if (!data.error) {
+            analysis = data;
+          }
+        } catch (err) {
+          console.error("Analysis failed", err);
+        }
       }
+
+      // 4. Insert into Database
+      const { data: assetData, error: assetError } = await supabase
+        .from("media_assets")
+        .insert({
+          storage_path: fileName,
+          public_url: publicUrl,
+          type: isImage ? "photo" : isVideo ? "video" : "audio",
+          metadata: analysis,
+        })
+        .select()
+        .single();
+
+      if (assetError) throw assetError;
+
+      // 5. Create Memory Record
+      const { data: memoryData, error: memoryError } = await supabase
+        .from("memories")
+        .insert({
+          media_asset_id: assetData.id,
+          status: "needs_review",
+          script: analysis.summary,
+        })
+        .select()
+        .single();
+
+      if (memoryError) throw memoryError;
+
+      // 6. Update Local Queue Item
+      setQueueItems((prev) =>
+        prev.map((item) =>
+          item.id === tempId
+            ? {
+              ...item,
+              id: memoryData.id,
+              status: "needs_review",
+              description:
+                analysis.summary ||
+                (isVideo ? "Video uploaded" : isAudio ? "Audio uploaded" : "No description"),
+              people: analysis.people,
+              date: analysis.date,
+              url: publicUrl,
+            }
+            : item
+        )
+      );
     } catch (error) {
       console.error(error);
       setQueueItems((prev) =>
@@ -606,7 +660,10 @@ export default function SettingsPage() {
                   )}
                   {item.status === "needs_review" && (
                     <div className="queue-actions">
-                      <button className="action-btn greenlight">
+                      <button
+                        className="action-btn greenlight"
+                        onClick={(e) => handleGreenlight(item.id, e)}
+                      >
                         Greenlight
                       </button>
                       <button className="action-btn edit">Edit Script</button>

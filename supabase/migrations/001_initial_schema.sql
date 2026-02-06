@@ -144,7 +144,7 @@ create table if not exists interactions (
   id uuid primary key default uuid_generate_v4(),
   patient_id uuid references patients(id) on delete cascade,
   memory_id uuid references memories(id) on delete cascade,
-  interaction_type text not null check (interaction_type in ('view', 'like', 'swipe', 'hold', 'video_generated', 'audio_played')),
+  interaction_type text not null check (interaction_type in ('view', 'like', 'swipe', 'hold', 'recall', 'video_generated', 'audio_played')),
   duration_ms int,
   created_at timestamptz default now()
 );
