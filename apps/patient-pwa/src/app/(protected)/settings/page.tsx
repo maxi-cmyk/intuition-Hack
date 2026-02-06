@@ -400,11 +400,11 @@ export default function SettingsPage() {
       prev.map((item) =>
         item.id === editingItemId
           ? {
-              ...item,
-              description: editDescription,
-              date: editDate,
-              people: editLocation,
-            }
+            ...item,
+            description: editDescription,
+            date: editDate,
+            people: editLocation,
+          }
           : item,
       ),
     );
@@ -562,20 +562,20 @@ export default function SettingsPage() {
         prev.map((item) =>
           item.id === tempId
             ? {
-                ...item,
-                id: memoryData.id,
-                status: "needs_review",
-                description:
-                  analysis.summary ||
-                  (isVideo
-                    ? "Video uploaded"
-                    : isAudio
-                      ? "Audio uploaded"
-                      : "No description"),
-                people: analysis.people,
-                date: analysis.date,
-                url: publicUrl,
-              }
+              ...item,
+              id: memoryData.id,
+              status: "needs_review",
+              description:
+                analysis.summary ||
+                (isVideo
+                  ? "Video uploaded"
+                  : isAudio
+                    ? "Audio uploaded"
+                    : "No description"),
+              people: analysis.people,
+              date: analysis.date,
+              url: publicUrl,
+            }
             : item,
         ),
       );
@@ -585,10 +585,10 @@ export default function SettingsPage() {
         prev.map((item) =>
           item.id === tempId
             ? {
-                ...item,
-                status: "failed",
-                description: "Failed to process file.",
-              }
+              ...item,
+              status: "failed",
+              description: "Failed to process file.",
+            }
             : item,
         ),
       );
@@ -604,7 +604,7 @@ export default function SettingsPage() {
   // PIN Entry Modal
   if (!isUnlocked) {
     return (
-      <div className="settings-overlay">
+      <div className="settings-overlay scrollbar-hide">
         <div className="pin-modal-new">
           <h2 className="pin-title-new">Enter PIN</h2>
 
@@ -651,7 +651,7 @@ export default function SettingsPage() {
   // Settings Menu
   if (currentView === "menu") {
     return (
-      <div className="settings-overlay">
+      <div className="settings-overlay scrollbar-hide">
         <div className="settings-modal">
           <div className="modal-header">
             <h1>Settings</h1>
@@ -703,7 +703,7 @@ export default function SettingsPage() {
   // Media Management
   if (currentView === "media") {
     return (
-      <div className="settings-overlay">
+      <div className="settings-overlay scrollbar-hide">
         <div className="settings-modal">
           <div className="modal-header">
             <button className="back-btn" onClick={handleBack}>
@@ -897,7 +897,7 @@ export default function SettingsPage() {
   // Algorithm Calibration
   if (currentView === "algorithm") {
     return (
-      <div className="settings-overlay">
+      <div className="settings-overlay scrollbar-hide">
         <div className="settings-modal">
           <div className="modal-header">
             <button className="back-btn" onClick={handleBack}>
@@ -1007,7 +1007,7 @@ export default function SettingsPage() {
   // Neural Proxy (Voice)
   if (currentView === "voice") {
     return (
-      <div className="settings-overlay">
+      <div className="settings-overlay scrollbar-hide">
         <div className="settings-modal">
           <div className="modal-header">
             <button className="back-btn" onClick={handleBack}>

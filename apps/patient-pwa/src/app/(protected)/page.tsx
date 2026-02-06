@@ -626,12 +626,12 @@ export default function PatientView() {
       <div
         ref={containerRef}
         onClick={() => registerTap(false)}
-        className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory bg-black no-scrollbar"
+        className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide"
         onScroll={handleScroll}
       >
         {memories.map((memory, index) => (
           <div
-            key={memory.id}
+            key={`${memory.id}-${index}`}
             className="h-screen w-screen snap-start snap-always relative flex items-center justify-center"
           >
             {/* Ken Burns Effect for Images */}
@@ -669,38 +669,36 @@ export default function PatientView() {
         <SettingsIcon className="w-6 h-6 text-white" />
       </Link>
 
-      {/* Bottom Section Container */}
-      <div className="absolute bottom-0 left-0 right-0 z-50 p-6 pb-10">
-        {/* Caption - Above date row, left of icons */}
+      {/* Top Left Info: Date and Location */}
+      <div className="absolute top-6 left-6 z-50 flex flex-col gap-1 pointer-events-none">
+        {/* Date - Top */}
+        <p
+          className="text-white text-xl font-bold"
+          style={{ textShadow: "1px 1px 4px rgba(0,0,0,0.8)" }}
+        >
+          {currentMemory?.media_assets.metadata?.date || ""}
+        </p>
+        {/* Location - Below Date */}
+        <p
+          className="text-white/90 text-lg font-medium"
+          style={{ textShadow: "1px 1px 4px rgba(0,0,0,0.8)" }}
+        >
+          {currentMemory?.media_assets.metadata?.location || ""}
+        </p>
+      </div>
+
+      {/* Caption - Bottom Left (Centered between left edge and buttons) */}
+      <div className="absolute bottom-10 left-6 right-24 z-50 flex items-center justify-center pointer-events-none">
         {narrationScript && (
-          <div className="mb-4 pr-28 animate-fade-in">
+          <div className="animate-fade-in max-w-lg">
             <p
-              className="text-white text-lg font-medium leading-relaxed"
+              className="text-white text-sm font-medium leading-relaxed text-center"
               style={{ textShadow: "1px 1px 4px rgba(0,0,0,0.8)" }}
             >
               {narrationScript}
             </p>
           </div>
         )}
-
-        {/* Bottom Row: Date (left) and Location (right, before icons) */}
-        <div className="flex justify-between items-end pr-28">
-          {/* Date - Bottom Left */}
-          <p
-            className="text-white text-xl font-bold"
-            style={{ textShadow: "1px 1px 4px rgba(0,0,0,0.8)" }}
-          >
-            {currentMemory?.media_assets.metadata?.date || ""}
-          </p>
-
-          {/* Location - Bottom Right (left of icons) */}
-          <p
-            className="text-white text-xl font-bold text-right"
-            style={{ textShadow: "1px 1px 4px rgba(0,0,0,0.8)" }}
-          >
-            {currentMemory?.media_assets.metadata?.location || ""}
-          </p>
-        </div>
       </div>
 
       {/* Action Buttons - Bottom Right, Vertical Stack */}

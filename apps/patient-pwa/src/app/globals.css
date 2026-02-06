@@ -110,6 +110,7 @@ body {
 
 /* Loading spinner */
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;
@@ -415,6 +416,7 @@ body {
 }
 
 @keyframes shake {
+
   0%,
   100% {
     transform: translateX(0);
@@ -893,6 +895,7 @@ body {
 }
 
 @keyframes pulse-recording {
+
   0%,
   100% {
     box-shadow: 0 0 0 8px rgba(124, 184, 124, 0.3);
@@ -1195,12 +1198,10 @@ body {
   left: 0;
   right: 0;
   height: 200px;
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.7) 0%,
-    rgba(0, 0, 0, 0.3) 50%,
-    transparent 100%
-  );
+  background: linear-gradient(to top,
+      rgba(0, 0, 0, 0.7) 0%,
+      rgba(0, 0, 0, 0.3) 50%,
+      transparent 100%);
   pointer-events: none;
   z-index: 5;
 }
@@ -1312,3 +1313,15 @@ body {
 }
 
 /* Remove old pill styles - no longer needed */
+
+/* Utility: Hide Scrollbar (Global) */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
