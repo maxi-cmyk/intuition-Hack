@@ -24,7 +24,11 @@ To provide an autonomous, adaptive digital companion that delivers personalized 
 
 - **Reverse-TikTok Interface**: Full-screen, vertical scroll-snap feed of memories.
 - **Automated Narration**: AI-generated voiceovers explaining the memory (who, when, what) to aid recall.
-- **Simple Interactions**: Large "Like" (Heart) and "Recall" (Star) buttons.
+- **Simple Interactions**: Large "Like" (Heart) and "Recall" (Arrow loop) buttons.
+  - **Like**: Increases engagement score and applies a **24-hour cooldown** to prevent repetitive looping.
+  - **Recall**: Logs a recall event. Future viewings may trigger an **Active Recall Prompt** ("Do you remember this?") to reinforce memory pathways.
+    - **"Yes"**: Confirms retention and maintains current schedule.
+    - **"No"**: Increases frequency (clears cooldown) to strengthen the memory.
 - **Zero-UI Navigation**: No complex menus; simple gestures.
 
 #### 4.2. Media Management (Caregiver/Patient Mode)
@@ -32,6 +36,7 @@ To provide an autonomous, adaptive digital companion that delivers personalized 
 - **Security**: PIN-protected settings area.
 - **Upload**: Support for Photos, Videos, and Audio.
 - **AI Analysis**: Automatically generates descriptions/scripts from uploaded images using Vision AI.
+- **Voice Customization**: Caregivers can clone a familiar voice (e.g., family member) using ElevenLabs integration for personalized narration.
 
 #### 4.3. Adaptation Engine
 

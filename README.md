@@ -21,14 +21,22 @@ Echo Adaptive is a digital companion that delivers personalized memories to pati
 | **Voice Commands**  | Say "Next", "Like", or "Recall" to control the app hands-free            |
 | **Sundowning Mode** | Warm amber theme automatically activates after 6PM                       |
 | **Error Tolerance** | Detects missed taps and offers Voice Mode for accessibility              |
+| **Voice Cloning**   | Clone a familiar voice (e.g., family member) for personalized narration  |
 | **PIN Protection**  | Caregiver settings are secured behind a numeric PIN                      |
+
+---
+
+## ❤️ Core Interactions
+
+- **Like (Heart)**: Acknowledges a memory and applies a **24-hour cooldown** to prevent repetitive loops.
+- **Recall (Loop)**: Logs a meaningful memory. Future viewings may trigger an **Active Recall Prompt** ("Do you remember this?") to help strengthen neural pathways.
 
 ---
 
 ## 🛠 Tech Stack
 
 - **Frontend**: Next.js 16 + React + Tailwind CSS
-- **Auth**: Clerk (passwordless)
+- **Auth**: Clerk
 - **Database**: Supabase (PostgreSQL + Row-Level Security)
 - **AI**: OpenAI GPT-4o (vision), ElevenLabs (TTS)
 
@@ -152,7 +160,3 @@ intuition-Hack/
 ## 📄 License
 
 MIT
-
-
-
-
