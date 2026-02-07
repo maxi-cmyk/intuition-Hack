@@ -549,7 +549,7 @@ export default function SettingsPage() {
         .insert({
           patient_id: patientId,
           media_asset_id: assetData.id,
-          status: "needs_review",
+          status: "needs_review", // Back to manual review
           script: analysis.summary,
         })
         .select()
@@ -564,7 +564,7 @@ export default function SettingsPage() {
             ? {
               ...item,
               id: memoryData.id,
-              status: "needs_review",
+              status: "needs_review", // Show as needs review
               description:
                 analysis.summary ||
                 (isVideo

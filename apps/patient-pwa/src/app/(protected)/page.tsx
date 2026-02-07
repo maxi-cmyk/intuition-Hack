@@ -66,6 +66,7 @@ const SettingsIcon = ({ className }: { className?: string }) => (
 
 interface Memory {
   id: string;
+  patient_id: string;
   script?: string;
   audio_url?: string;
   media_assets: {
@@ -119,9 +120,17 @@ export default function PatientView() {
 
   // TTS for Voice Mode
   useEffect(() => {
-    if (adaptationState.isVoiceMode && !isListening) {
-      const msg = new SpeechSynthesisUtterance("Tap the microphone to speak");
-      window.speechSynthesis.speak(msg);
+    if (adaptationState.isVoiceMode) {
+      // Stop narration audio when voice mode starts
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+
+      if (!isListening) {
+        const msg = new SpeechSynthesisUtterance("Tap the microphone to speak");
+        window.speechSynthesis.speak(msg);
+      }
     }
   }, [adaptationState.isVoiceMode]);
 
@@ -151,29 +160,35 @@ export default function PatientView() {
       console.log("Heard:", transcript);
 
       // Parse commands
-      if (transcript.includes("next")) {
+      // Parse commands with looser matching
+      if (transcript.includes("next") || transcript.includes("skip") || transcript.includes("forward")) {
         const nextIndex = Math.min(currentIndex + 1, memories.length - 1);
-        setCurrentIndex(nextIndex);
-        // Instantly scroll to the next memory
-        if (containerRef.current) {
-          containerRef.current.scrollTo({
-            top: nextIndex * window.innerHeight,
-            behavior: "instant",
-          });
+
+        // Only scroll if we are not at the end
+        if (nextIndex !== currentIndex) {
+          setCurrentIndex(nextIndex);
+          // Standard scroll calculation
+          if (containerRef.current) {
+            containerRef.current.scrollTo({
+              top: nextIndex * window.innerHeight,
+              behavior: "smooth",
+            });
+          }
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance("Next memory"));
+        } else {
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance("No more memories"));
         }
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance("Next"));
-      } else if (transcript.includes("like")) {
-        // Call toggleLike to update UI and database
+      } else if (transcript.includes("like") || transcript.includes("love") || transcript.includes("heart")) {
         toggleLike();
         window.speechSynthesis.speak(new SpeechSynthesisUtterance("Liked"));
-      } else if (transcript.includes("recall")) {
-        // Call toggleRecall to update UI and database
+      } else if (transcript.includes("recall") || transcript.includes("remember") || transcript.includes("save")) {
         toggleRecall();
         window.speechSynthesis.speak(new SpeechSynthesisUtterance("Recalled"));
       } else {
+        console.log("Command not recognized:", transcript);
         window.speechSynthesis.speak(
           new SpeechSynthesisUtterance(
-            "I didn't understand. Try saying next, like, or recall.",
+            "I heard " + transcript + ". Try saying Next, Like, or Recall.",
           ),
         );
       }
@@ -184,8 +199,16 @@ export default function PatientView() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onerror = (event: any) => {
+      if (event.error === "aborted") return; // Ignore expected abort errors
       console.error("Speech error:", event.error);
-      setIsListening(false);
+      if (event.error === "no-speech") {
+        setIsListening(false);
+      } else if (event.error === "not-allowed") {
+        alert("Microphone access blocked. Please enable permissions.");
+        setIsListening(false);
+      } else {
+        setIsListening(false);
+      }
     };
 
     recognition.onend = () => {
@@ -406,10 +429,15 @@ export default function PatientView() {
 
   // Play audio when available
   useEffect(() => {
-    if (narrationAudio && audioRef.current) {
-      audioRef.current.play().catch((e) => console.log("Autoplay blocked", e));
+    if (narrationAudio && audioRef.current && !adaptationState.isVoiceMode) {
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((error) => {
+          console.log("Autoplay blocked (waiting for interaction):", error);
+        });
+      }
     }
-  }, [narrationAudio]);
+  }, [narrationAudio, adaptationState.isVoiceMode]);
 
   // Detect if current memory was previously recalled -> show prompt
   useEffect(() => {
@@ -444,12 +472,19 @@ export default function PatientView() {
     setLikedMemories(newLiked);
 
     try {
-      // Update engagement count
-      await supabase.rpc("increment_column", {
-        table_name: "memories",
-        column_name: "engagement_count",
-        row_id: currentMemory.id,
-      });
+      // Update engagement count (standard update instead of RPC)
+      const { data: currentData } = await supabase
+        .from("memories")
+        .select("engagement_count")
+        .eq("id", currentMemory.id)
+        .single();
+
+      if (currentData) {
+        await supabase
+          .from("memories")
+          .update({ engagement_count: (currentData.engagement_count || 0) + 1 })
+          .eq("id", currentMemory.id);
+      }
 
       // Set cooldown (24 hours) when liked to reduce frequency
       if (!wasLiked) {
@@ -466,7 +501,6 @@ export default function PatientView() {
     }
   };
 
-  // Toggle Recall - Logs to interactions for future prompt
   const toggleRecall = async () => {
     if (!currentMemory) return;
     const newRecalled = new Set(recalledMemories);
@@ -482,21 +516,31 @@ export default function PatientView() {
     try {
       // Log recall interaction (for future "Do you remember?" prompts)
       if (!wasRecalled) {
-        await supabase.from("interactions").insert({
-          memory_id: currentMemory.id,
-          interaction_type: "recall",
-        });
+        if (currentMemory.patient_id) {
+          await supabase.from("interactions").insert({
+            memory_id: currentMemory.id,
+            patient_id: currentMemory.patient_id,
+            interaction_type: "recall",
+          });
+        }
 
         // Add to previously recalled set
         setPreviouslyRecalledIds(prev => new Set([...prev, currentMemory.id]));
       }
 
-      // Update recall score
-      await supabase.rpc("increment_column", {
-        table_name: "memories",
-        column_name: "recall_score",
-        row_id: currentMemory.id,
-      });
+      // Update recall score (standard update instead of RPC)
+      const { data: currentRecall } = await supabase
+        .from("memories")
+        .select("recall_score")
+        .eq("id", currentMemory.id)
+        .single();
+
+      if (currentRecall) {
+        await supabase
+          .from("memories")
+          .update({ recall_score: (currentRecall.recall_score || 0) + 1 })
+          .eq("id", currentMemory.id);
+      }
     } catch (e) {
       console.error("Failed to update recall", e);
     }
@@ -563,7 +607,7 @@ export default function PatientView() {
           }}
           className={`absolute top-4 right-4 z-40 p-4 bg-black/40 backdrop-blur-md rounded-full text-white/80 transition-all ${adaptationState.isVoiceMode ? "scale-150 ring-4 ring-yellow-500" : ""}`}
         >
-          Open Settings
+          <SettingsIcon className="w-6 h-6 text-white" />
         </Link>
       </main>
     );
@@ -625,7 +669,13 @@ export default function PatientView() {
       {/* Main Container - Track Missed Taps */}
       <div
         ref={containerRef}
-        onClick={() => registerTap(false)}
+        onClick={() => {
+          registerTap(false);
+          // Unlock audio context on first interaction
+          if (audioRef.current && audioRef.current.paused && narrationAudio) {
+            audioRef.current.play().catch(e => console.log("Audio unlock failed", e));
+          }
+        }}
         className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide"
         onScroll={handleScroll}
       >
