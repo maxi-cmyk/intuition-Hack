@@ -1,6 +1,12 @@
-# Echo Adaptive
+# Echo Adaptive: Tiktok, but for Dementia
 
 > **A reminiscence therapy platform with adaptive accessibility for dementia patients.**
+
+<p align="center">
+  <img width="200" src="https://github.com/user-attachments/assets/8eaab12e-8eb0-4cfa-81eb-7039a7628929" />
+  <img width="200" src="https://github.com/user-attachments/assets/9f4981b7-c771-43a7-b6f7-04dc972f0ed1" />
+  <img width="200" src="https://github.com/user-attachments/assets/f5bd56b8-b924-4ba5-b620-e09798c26092" />
+</p>
 
 Echo Adaptive is a digital companion that delivers personalized memories to patients with cognitive impairment. It uses AI-powered narration and an "Adaptation Engine" that dynamically adjusts the interface based on time of day, behavioral cues, and environmental factors.
 
@@ -15,14 +21,22 @@ Echo Adaptive is a digital companion that delivers personalized memories to pati
 | **Voice Commands**  | Say "Next", "Like", or "Recall" to control the app hands-free            |
 | **Sundowning Mode** | Warm amber theme automatically activates after 6PM                       |
 | **Error Tolerance** | Detects missed taps and offers Voice Mode for accessibility              |
+| **Voice Cloning**   | Clone a familiar voice (e.g., family member) for personalized narration  |
 | **PIN Protection**  | Caregiver settings are secured behind a numeric PIN                      |
+
+---
+
+## ❤️ Core Interactions
+
+- **Like (Heart)**: Acknowledges a memory and applies a **24-hour cooldown** to prevent repetitive loops.
+- **Recall (Loop)**: Logs a meaningful memory. Future viewings may trigger an **Active Recall Prompt** ("Do you remember this?") to help strengthen neural pathways.
 
 ---
 
 ## 🛠 Tech Stack
 
 - **Frontend**: Next.js 16 + React + Tailwind CSS
-- **Auth**: Clerk (passwordless)
+- **Auth**: Clerk
 - **Database**: Supabase (PostgreSQL + Row-Level Security)
 - **AI**: OpenAI GPT-4o (vision), ElevenLabs (TTS)
 

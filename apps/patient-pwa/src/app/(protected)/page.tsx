@@ -44,8 +44,16 @@ const AutorenewIcon = ({
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8z" fill={filled ? "currentColor" : "none"} stroke={filled ? "none" : "currentColor"} />
-    <path d="M12 18c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" fill={filled ? "currentColor" : "none"} stroke={filled ? "none" : "currentColor"} />
+    <path
+      d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8z"
+      fill={filled ? "currentColor" : "none"}
+      stroke={filled ? "none" : "currentColor"}
+    />
+    <path
+      d="M12 18c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
+      fill={filled ? "currentColor" : "none"}
+      stroke={filled ? "none" : "currentColor"}
+    />
   </svg>
 );
 
@@ -94,9 +102,9 @@ export default function PatientView() {
   const [recalledMemories, setRecalledMemories] = useState<Set<string>>(
     new Set(),
   );
-  const [previouslyRecalledIds, setPreviouslyRecalledIds] = useState<Set<string>>(
-    new Set(),
-  );
+  const [previouslyRecalledIds, setPreviouslyRecalledIds] = useState<
+    Set<string>
+  >(new Set());
 
   // Recall Prompt State
   const [showRecallPrompt, setShowRecallPrompt] = useState(false);
@@ -288,7 +296,9 @@ export default function PatientView() {
           .eq("interaction_type", "recall");
 
         if (recallData) {
-          const recalledIds = new Set(recallData.map((r: { memory_id: string }) => r.memory_id));
+          const recalledIds = new Set(
+            recallData.map((r: { memory_id: string }) => r.memory_id),
+          );
           setPreviouslyRecalledIds(recalledIds);
         }
       } catch (err) {
@@ -312,13 +322,14 @@ export default function PatientView() {
     setIsLoadingMore(true);
     try {
       // Get IDs not currently in the feed
-      const currentIds = new Set(memories.map(m => m.id));
-      const availableIds = allMemoryIds.filter(id => !currentIds.has(id));
+      const currentIds = new Set(memories.map((m) => m.id));
+      const availableIds = allMemoryIds.filter((id) => !currentIds.has(id));
 
       // If we've shown all, reshuffle and allow repeats
-      const idsToFetch = availableIds.length > 0
-        ? shuffleArray(availableIds).slice(0, 5)
-        : shuffleArray(allMemoryIds).slice(0, 5);
+      const idsToFetch =
+        availableIds.length > 0
+          ? shuffleArray(availableIds).slice(0, 5)
+          : shuffleArray(allMemoryIds).slice(0, 5);
 
       if (idsToFetch.length > 0) {
         const { data, error } = await supabase
@@ -329,7 +340,7 @@ export default function PatientView() {
         if (error) throw error;
 
         // Append shuffled new memories to the feed
-        setMemories(prev => [...prev, ...shuffleArray(data || [])]);
+        setMemories((prev) => [...prev, ...shuffleArray(data || [])]);
       }
     } catch (err) {
       console.error("Failed to load more memories", err);
@@ -525,7 +536,9 @@ export default function PatientView() {
         }
 
         // Add to previously recalled set
-        setPreviouslyRecalledIds(prev => new Set([...prev, currentMemory.id]));
+        setPreviouslyRecalledIds(
+          (prev) => new Set([...prev, currentMemory.id]),
+        );
       }
 
       // Update recall score (standard update instead of RPC)
@@ -689,8 +702,9 @@ export default function PatientView() {
               <img
                 src={memory.media_assets.public_url}
                 alt="Memory"
-                className={`absolute inset-0 w-full h-full object-cover transition-transform duration-[12000ms] ease-linear ${index === currentIndex ? "scale-110" : "scale-100"
-                  }`}
+                className={`absolute inset-0 w-full h-full object-cover transition-transform duration-[12000ms] ease-linear ${
+                  index === currentIndex ? "scale-110" : "scale-100"
+                }`}
                 draggable={false}
               />
             ) : (
@@ -752,7 +766,9 @@ export default function PatientView() {
       </div>
 
       {/* Action Buttons - Bottom Right, Vertical Stack */}
-      <div className={`absolute bottom-10 right-6 z-50 flex flex-col items-center gap-6 transition-all duration-300 ${adaptationState.isVoiceMode ? "scale-125" : ""}`}>
+      <div
+        className={`absolute bottom-10 right-6 z-50 flex flex-col items-center gap-6 transition-all duration-300 ${adaptationState.isVoiceMode ? "scale-125" : ""}`}
+      >
         {/* Like Button */}
         <button
           onClick={(e) => {
@@ -763,15 +779,19 @@ export default function PatientView() {
           className={`flex flex-col items-center gap-1 active:scale-90 transition-transform ${adaptationState.isVoiceMode ? "ring-4 ring-red-500 rounded-2xl p-2" : ""}`}
         >
           <div
-            className={`w-[56px] h-[56px] rounded-full flex items-center justify-center ${isLiked ? "bg-red-500/30" : "bg-black/40"
-              } backdrop-blur-sm border border-white/20 transition-all`}
+            className={`w-[56px] h-[56px] rounded-full flex items-center justify-center ${
+              isLiked ? "bg-red-500/30" : "bg-black/40"
+            } backdrop-blur-sm border border-white/20 transition-all`}
           >
             <HeartIcon
               filled={isLiked}
               className={`w-7 h-7 ${isLiked ? "text-red-500" : "text-white"}`}
             />
           </div>
-          <span className="text-white text-sm font-semibold" style={{ textShadow: "1px 1px 2px rgba(0,0,0,0.8)" }}>
+          <span
+            className="text-white text-sm font-semibold"
+            style={{ textShadow: "1px 1px 2px rgba(0,0,0,0.8)" }}
+          >
             Like
           </span>
         </button>
@@ -786,15 +806,19 @@ export default function PatientView() {
           className={`flex flex-col items-center gap-1 active:scale-90 transition-transform ${adaptationState.isVoiceMode ? "ring-4 ring-amber-400 rounded-2xl p-2" : ""}`}
         >
           <div
-            className={`w-[56px] h-[56px] rounded-full flex items-center justify-center ${isRecalled ? "bg-amber-400/30" : "bg-black/40"
-              } backdrop-blur-sm border border-white/20 transition-all`}
+            className={`w-[56px] h-[56px] rounded-full flex items-center justify-center ${
+              isRecalled ? "bg-amber-400/30" : "bg-black/40"
+            } backdrop-blur-sm border border-white/20 transition-all`}
           >
             <AutorenewIcon
               filled={isRecalled}
               className={`w-7 h-7 ${isRecalled ? "text-amber-400" : "text-white"}`}
             />
           </div>
-          <span className="text-white text-sm font-semibold" style={{ textShadow: "1px 1px 2px rgba(0,0,0,0.8)" }}>
+          <span
+            className="text-white text-sm font-semibold"
+            style={{ textShadow: "1px 1px 2px rgba(0,0,0,0.8)" }}
+          >
             Recall
           </span>
         </button>
@@ -878,6 +902,6 @@ export default function PatientView() {
           animation: slide-up 0.4s ease-out;
         }
       `}</style>
-    </main >
+    </main>
   );
 }
