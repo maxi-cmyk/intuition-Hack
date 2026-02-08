@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { SignOutButton, useUser } from "@clerk/nextjs";
 
+import { HistorySection } from "../../../components/HistorySection";
+
 const DEFAULT_PIN = "1234";
 const PIN_STORAGE_KEY = "echo_settings_pin";
 const ALGORITHM_SETTINGS_KEY = "echo_algorithm_settings";
@@ -12,23 +14,14 @@ type SettingsView = "menu" | "media" | "algorithm" | "voice";
 
 import { useSupabase } from "../../../hooks/useSupabase";
 
-interface QueueItem {
-  id: string;
-  name: string;
-  status: "analyzing" | "synthesizing" | "needs_review" | "ready" | "failed";
-  description?: string;
-  people?: string;
-  date?: string;
-  url?: string;
-}
+import { QueueItem, VoiceProfile } from "../../../types";
 
-// Voice profiles (narrator voices)
-interface VoiceProfile {
-  id: string;
-  name: string;
-  status: "pending" | "processing" | "ready" | "failed";
-  samples: { filename: string; date: string }[];
-}
+// Helper to format time
+const formatTime = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+};
 
 export default function SettingsPage() {
   const supabase = useSupabase();
@@ -78,19 +71,20 @@ export default function SettingsPage() {
     getPatient();
   }, [user, supabase]);
 
-  // Add Detail modal state
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editDescription, setEditDescription] = useState("");
   const [editDate, setEditDate] = useState("");
   const [editLocation, setEditLocation] = useState("");
+  const [editPeople, setEditPeople] = useState("");
 
-  // Algorithm settings
+  const [historyItems, setHistoryItems] = useState<QueueItem[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
   const [fixationCooldown, setFixationCooldown] = useState(24);
   const [noveltyWeight, setNoveltyWeight] = useState(50);
   const [sundowningTime, setSundowningTime] = useState("18:00");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  // Voice settings
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [voices, setVoices] = useState<VoiceProfile[]>([
@@ -98,6 +92,17 @@ export default function SettingsPage() {
   ]);
   const [activeVoice, setActiveVoice] = useState("default");
   const [isNamingVoice, setIsNamingVoice] = useState(false);
+
+  // Load active voice from local storage on mount
+  useEffect(() => {
+    const savedVoice = localStorage.getItem("active_voice_id");
+    if (savedVoice) setActiveVoice(savedVoice);
+  }, []);
+
+  // Save active voice to local storage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("active_voice_id", activeVoice);
+  }, [activeVoice]);
   const [newVoiceName, setNewVoiceName] = useState("");
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -298,7 +303,6 @@ export default function SettingsPage() {
     setAudioBlob(null);
   };
 
-  // Preview voice with TTS
   const previewVoice = async (voiceId: string) => {
     if (voiceId === "default") {
       alert("Default narrator cannot be previewed.");
@@ -329,7 +333,6 @@ export default function SettingsPage() {
     }
   };
 
-  // Delete voice
   const deleteVoice = async (voiceId: string) => {
     if (voiceId === "default") return;
     if (!confirm("Are you sure you want to delete this voice?")) return;
@@ -352,7 +355,6 @@ export default function SettingsPage() {
     }
   };
 
-  // Save algorithm settings
   const handleSaveAlgorithmSettings = () => {
     const settings = { fixationCooldown, noveltyWeight, sundowningTime };
     localStorage.setItem(ALGORITHM_SETTINGS_KEY, JSON.stringify(settings));
@@ -367,14 +369,12 @@ export default function SettingsPage() {
   const handleGreenlight = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
-    // Optimistic Update
     setQueueItems((prev) =>
       prev.map((item) =>
         item.id === id ? { ...item, status: "ready" } : item,
       ),
     );
 
-    // DB Update
     try {
       const { error } = await supabase
         .from("memories")
@@ -395,49 +395,62 @@ export default function SettingsPage() {
   const handleSaveDetail = async () => {
     if (!editingItemId) return;
 
-    // Update local state
-    setQueueItems((prev) =>
-      prev.map((item) =>
-        item.id === editingItemId
-          ? {
+    // Update local state for both queueItems and historyItems
+    const updateItem = (item: QueueItem) =>
+      item.id === editingItemId
+        ? {
             ...item,
             description: editDescription,
             date: editDate,
-            people: editLocation,
+            location: editLocation,
+            people: editPeople,
           }
-          : item,
-      ),
-    );
+        : item;
 
-    // Update Supabase - memories for script, media_assets for metadata
+    setQueueItems((prev) => prev.map(updateItem));
+    setHistoryItems((prev) => prev.map(updateItem));
+
     try {
-      // Update script in memories
-      const { error: memError } = await supabase
-        .from("memories")
-        .update({ script: editDescription })
-        .eq("id", editingItemId);
-      if (memError) throw memError;
-
-      // Get the media_asset_id for this memory
+      // First, try to find if this is a memory ID
       const { data: memory } = await supabase
         .from("memories")
-        .select("media_asset_id")
+        .select("id, media_asset_id")
         .eq("id", editingItemId)
         .single();
 
-      if (memory?.media_asset_id) {
-        // Update metadata in media_assets
-        const { error: assetError } = await supabase
+      if (memory) {
+        // It's a memory ID - update memory and its asset
+        await supabase
+          .from("memories")
+          .update({ script: editDescription })
+          .eq("id", editingItemId);
+
+        if (memory.media_asset_id) {
+          await supabase
+            .from("media_assets")
+            .update({
+              metadata: {
+                summary: editDescription,
+                date: editDate,
+                location: editLocation,
+                people: editPeople,
+              },
+            })
+            .eq("id", memory.media_asset_id);
+        }
+      } else {
+        // It might be an asset ID - update the asset directly
+        await supabase
           .from("media_assets")
           .update({
             metadata: {
               summary: editDescription,
               date: editDate,
               location: editLocation,
+              people: editPeople,
             },
           })
-          .eq("id", memory.media_asset_id);
-        if (assetError) throw assetError;
+          .eq("id", editingItemId);
       }
     } catch (err) {
       console.error("Failed to save detail", err);
@@ -447,161 +460,270 @@ export default function SettingsPage() {
     setEditDescription("");
     setEditDate("");
     setEditLocation("");
+    setEditPeople("");
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    // Validate file type - expanded support
-    const validImageTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-    ];
-    const validVideoTypes = ["video/mp4", "video/webm", "video/quicktime"];
-    const validAudioTypes = [
-      "audio/mpeg",
-      "audio/wav",
-      "audio/mp3",
-      "audio/x-wav",
-    ];
+    // Convert FileList to Array
+    const fileArray = Array.from(files);
 
-    const isImage = validImageTypes.includes(file.type);
-    const isVideo = validVideoTypes.includes(file.type);
-    const isAudio = validAudioTypes.includes(file.type);
+    for (const file of fileArray) {
+      // Validate file type
+      const validImageTypes = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+      ];
+      const validVideoTypes = ["video/mp4", "video/webm", "video/quicktime"];
+      const validAudioTypes = [
+        "audio/mpeg",
+        "audio/wav",
+        "audio/mp3",
+        "audio/x-wav",
+      ];
 
-    if (!isImage && !isVideo && !isAudio) {
-      alert(
-        "Unsupported file format. Please upload JPG, PNG, MP4, MOV, MP3, or WAV.",
-      );
-      return;
+      const isImage = validImageTypes.includes(file.type);
+      const isVideo = validVideoTypes.includes(file.type);
+      const isAudio = validAudioTypes.includes(file.type);
+
+      if (!isImage && !isVideo && !isAudio) {
+        alert(`Unsupported file format: ${file.name}`);
+        continue;
+      }
+
+      // Create optimistic item
+      const tempId =
+        Date.now().toString() + Math.random().toString(36).substr(2, 9);
+      const newItem: QueueItem = {
+        id: tempId,
+        name: isImage ? "Photo" : isVideo ? "Video" : "Media",
+        status: "analyzing",
+        description: "Uploading and analyzing...",
+      };
+
+      setQueueItems((prev) => [newItem, ...prev]);
+
+      try {
+        const fileName = `${Date.now()}-${file.name.replace(/\s/g, "_")}`;
+        const { error: uploadError } = await supabase.storage
+          .from("media-assets")
+          .upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("media-assets").getPublicUrl(fileName);
+
+        let analysis = { summary: "", people: "", date: "", location: "" };
+
+        if (isImage) {
+          try {
+            const response = await fetch("/api/analyze-media", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                fileUrl: publicUrl,
+                mediaType: "image",
+              }),
+            });
+            const data = await response.json();
+            if (!data.error) {
+              analysis = data;
+            }
+          } catch (err) {
+            console.error("Analysis failed", err);
+          }
+        }
+
+        if (!patientId) throw new Error("Patient ID not found. Please wait...");
+
+        const { data: assetData, error: assetError } = await supabase
+          .from("media_assets")
+          .insert({
+            patient_id: patientId,
+            storage_path: fileName,
+            public_url: publicUrl,
+            type: isImage ? "photo" : isVideo ? "video" : "audio",
+            metadata: analysis,
+          })
+          .select()
+          .single();
+
+        if (assetError) throw assetError;
+
+        const { data: memoryData, error: memoryError } = await supabase
+          .from("memories")
+          .insert({
+            patient_id: patientId,
+            media_asset_id: assetData.id,
+            status: "needs_review",
+            script: analysis.summary,
+          })
+          .select()
+          .single();
+
+        if (memoryError) throw memoryError;
+
+        setQueueItems((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? {
+                  ...item,
+                  id: memoryData.id,
+                  status: "needs_review",
+                  description:
+                    analysis.summary ||
+                    (isVideo
+                      ? "Video uploaded"
+                      : isAudio
+                        ? "Audio uploaded"
+                        : "No description"),
+                  people: analysis.people,
+                  location: analysis.location,
+                  date: analysis.date,
+                  url: publicUrl,
+                }
+              : item,
+          ),
+        );
+
+        fetchHistory();
+      } catch (error) {
+        console.error(error);
+        setQueueItems((prev) =>
+          prev.map((item) =>
+            item.id === tempId
+              ? {
+                  ...item,
+                  status: "failed",
+                  description: "Failed to process file.",
+                }
+              : item,
+          ),
+        );
+      }
     }
 
-    // Create optimistic item
-    const tempId = Date.now().toString();
-    const newItem: QueueItem = {
-      id: tempId,
-      name: file.name,
-      status: "analyzing",
-      description: "Uploading and analyzing...",
-    };
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
-    setQueueItems((prev) => [newItem, ...prev]);
-
+  const fetchHistory = async () => {
+    setIsLoadingHistory(true);
     try {
-      // 1. Upload to Supabase
-      const fileName = `${Date.now()}-${file.name.replace(/\s/g, "_")}`;
-      const { error: uploadError } = await supabase.storage
-        .from("media-assets")
-        .upload(fileName, file);
+      const { data: assets, error } = await supabase
+        .from("media_assets")
+        .select(
+          `
+          id,
+          created_at,
+          public_url,
+          metadata,
+          type,
+          memories (
+            id,
+            status,
+            script
+          )
+        `,
+        )
+        .order("created_at", { ascending: false });
 
-      if (uploadError) throw uploadError;
+      if (error) throw error;
 
-      // 2. Get Public URL
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("media-assets").getPublicUrl(fileName);
-
-      // 3. Analyze (Skip for video, partial for image)
-      let analysis = { summary: "", people: "", date: "" };
-
-      if (isImage) {
-        try {
-          const response = await fetch("/api/analyze-media", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fileUrl: publicUrl,
-              mediaType: "image",
-            }),
-          });
-          const data = await response.json();
-          if (!data.error) {
-            analysis = data;
+      // Deduplicate by public_url to avoid showing same image multiple times
+      const seenUrls = new Set<string>();
+      const items: QueueItem[] = assets
+        .filter((asset: any) => {
+          if (!asset.public_url || seenUrls.has(asset.public_url)) {
+            return false;
           }
-        } catch (err) {
-          console.error("Analysis failed", err);
+          seenUrls.add(asset.public_url);
+          return true;
+        })
+        .map((asset: any) => {
+          // Use memory data if available, otherwise fallback to asset data
+          const memory = asset.memories?.[0];
+          const status = memory?.status || "analyzing";
+
+          return {
+            id: memory?.id || asset.id,
+            name: asset.type === "video" ? "Video" : "Photo",
+            status: status,
+            description:
+              memory?.script || asset.metadata?.summary || "No description",
+            people: asset.metadata?.people,
+            location: asset.metadata?.location,
+            date: asset.metadata?.date,
+            url: asset.public_url,
+          };
+        });
+      setHistoryItems(items);
+    } catch (e) {
+      console.error("Failed to fetch history", e);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentView === "media") {
+      fetchHistory();
+    }
+  }, [currentView]);
+
+  const handleDeleteHistory = async (id: string) => {
+    try {
+      const { data: memory } = await supabase
+        .from("memories")
+        .select("media_asset_id, media_assets(storage_path)")
+        .eq("id", id)
+        .single();
+
+      if (memory) {
+        // It is a memory
+        if (memory.media_assets?.storage_path) {
+          await supabase.storage
+            .from("media-assets")
+            .remove([memory.media_assets.storage_path]);
+        }
+        const { error } = await supabase.from("memories").delete().eq("id", id);
+        if (error) throw error;
+      } else {
+        // Maybe it's a raw asset ID?
+        const { data: asset } = await supabase
+          .from("media_assets")
+          .select("id, storage_path")
+          .eq("id", id)
+          .single();
+
+        if (asset) {
+          if (asset.storage_path) {
+            await supabase.storage
+              .from("media-assets")
+              .remove([asset.storage_path]);
+          }
+          const { error } = await supabase
+            .from("media_assets")
+            .delete()
+            .eq("id", id);
+          if (error) throw error;
         }
       }
 
-      // 4. Insert into Database
-      if (!patientId) throw new Error("Patient ID not found. Please wait...");
-
-      const { data: assetData, error: assetError } = await supabase
-        .from("media_assets")
-        .insert({
-          patient_id: patientId,
-          storage_path: fileName,
-          public_url: publicUrl,
-          type: isImage ? "photo" : isVideo ? "video" : "audio",
-          metadata: analysis,
-        })
-        .select()
-        .single();
-
-      if (assetError) throw assetError;
-
-      // 5. Create Memory Record
-      const { data: memoryData, error: memoryError } = await supabase
-        .from("memories")
-        .insert({
-          patient_id: patientId,
-          media_asset_id: assetData.id,
-          status: "needs_review", // Back to manual review
-          script: analysis.summary,
-        })
-        .select()
-        .single();
-
-      if (memoryError) throw memoryError;
-
-      // 6. Update Local Queue Item
-      setQueueItems((prev) =>
-        prev.map((item) =>
-          item.id === tempId
-            ? {
-              ...item,
-              id: memoryData.id,
-              status: "needs_review", // Show as needs review
-              description:
-                analysis.summary ||
-                (isVideo
-                  ? "Video uploaded"
-                  : isAudio
-                    ? "Audio uploaded"
-                    : "No description"),
-              people: analysis.people,
-              date: analysis.date,
-              url: publicUrl,
-            }
-            : item,
-        ),
-      );
-    } catch (error) {
-      console.error(error);
-      setQueueItems((prev) =>
-        prev.map((item) =>
-          item.id === tempId
-            ? {
-              ...item,
-              status: "failed",
-              description: "Failed to process file.",
-            }
-            : item,
-        ),
-      );
+      // Update state
+      setHistoryItems((prev) => prev.filter((i) => i.id !== id));
+    } catch (e) {
+      console.error("Delete failed", e);
+      alert("Failed to delete memory");
     }
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  // PIN Entry Modal
   if (!isUnlocked) {
     return (
       <div className="settings-overlay scrollbar-hide">
@@ -648,7 +770,6 @@ export default function SettingsPage() {
     );
   }
 
-  // Settings Menu
   if (currentView === "menu") {
     return (
       <div className="settings-overlay scrollbar-hide">
@@ -726,7 +847,7 @@ export default function SettingsPage() {
                 ref={fileInputRef}
                 onChange={handleFileUpload}
                 accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav"
-                hidden
+                multiple
               />
               <div className="upload-icon">↑</div>
               <p>Drop photos/videos/audio here or click to upload</p>
@@ -780,19 +901,9 @@ export default function SettingsPage() {
                       ×
                     </button>
                   </div>
-                  {(item.description || item.status === "analyzing") && (
+                  {item.status === "analyzing" && (
                     <div className="queue-details mt-2">
-                      {item.date && item.date !== "Unknown" && (
-                        <div className="text-xs text-muted-foreground mb-1">
-                          📅 {item.date}
-                        </div>
-                      )}
-                      {item.people && item.people !== "Unknown" && (
-                        <div className="text-xs text-muted-foreground mb-1">
-                          👥 {item.people}
-                        </div>
-                      )}
-                      <p className="queue-description">{item.description}</p>
+                      <p className="queue-description">Analyzing...</p>
                     </div>
                   )}
                   {item.status === "needs_review" && (
@@ -810,7 +921,8 @@ export default function SettingsPage() {
                           setEditingItemId(item.id);
                           setEditDescription(item.description || "");
                           setEditDate(item.date || "");
-                          setEditLocation(item.people || "");
+                          setEditLocation(item.location || "");
+                          setEditPeople(item.people || "");
                         }}
                       >
                         Add Detail
@@ -819,6 +931,24 @@ export default function SettingsPage() {
                   )}
                 </div>
               ))}
+              <HistorySection
+                items={historyItems}
+                onDelete={(id) => {
+                  if (confirm("Are you sure you want to delete this memory?")) {
+                    handleDeleteHistory(id);
+                  }
+                }}
+                onEdit={(id) => {
+                  const item = historyItems.find((i) => i.id === id);
+                  if (item) {
+                    setEditingItemId(id);
+                    setEditDescription(item.description || "");
+                    setEditDate(item.date || "");
+                    setEditLocation(item.location || "");
+                    setEditPeople(item.people || "");
+                  }
+                }}
+              />
             </div>
           </div>
         </div>
@@ -866,15 +996,41 @@ export default function SettingsPage() {
                     className="w-full p-3 rounded-lg bg-surface-darker border border-white/10 text-white"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm text-text-muted mb-1">
+                    People
+                  </label>
+                  <input
+                    type="text"
+                    value={editPeople}
+                    onChange={(e) => setEditPeople(e.target.value)}
+                    placeholder="e.g. Mom, Dad"
+                    className="w-full p-3 rounded-lg bg-surface-darker border border-white/10 text-white"
+                  />
+                </div>
               </div>
 
               <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    if (
+                      confirm("Are you sure you want to delete this memory?")
+                    ) {
+                      handleDeleteHistory(editingItemId);
+                      setEditingItemId(null);
+                    }
+                  }}
+                  className="flex-1 py-3 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
+                >
+                  Remove
+                </button>
                 <button
                   onClick={() => {
                     setEditingItemId(null);
                     setEditDescription("");
                     setEditDate("");
                     setEditLocation("");
+                    setEditPeople("");
                   }}
                   className="flex-1 py-3 rounded-lg bg-surface-darker text-text-muted"
                 >

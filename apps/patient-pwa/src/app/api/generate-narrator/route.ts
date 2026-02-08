@@ -1,75 +1,66 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
+import { OllamaClient } from "../../../lib/ollama";
 
 export async function POST(req: Request) {
   try {
     const { imageUrl, voiceId } = await req.json();
 
-    const openai = process.env.OPENAI_API_KEY
-      ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-      : null;
+    // 1. Fetch Image and Convert to Base64 (for Ollama)
+    // Small limit to avoid blowing up payload
+    const imageRes = await fetch(imageUrl);
+    const imageBlob = await imageRes.blob();
+    const arrayBuffer = await imageBlob.arrayBuffer();
+    const base64Image = Buffer.from(arrayBuffer).toString("base64");
 
-    if (!openai) {
-      return NextResponse.json(
-        { error: "OpenAI API key missing" },
-        { status: 503 }
-      );
+    // 2. Generate Script using Ollama (Llava)
+    const ollama = new OllamaClient(
+      process.env.OLLAMA_BASE_URL || "http://localhost:11434",
+      process.env.OLLAMA_VISION_MODEL || "llava",
+    );
+
+    console.log("Generating narration with Ollama...");
+    const prompt =
+      "Write a very short, warm, reminiscent narration (max 10 words) for this photo, addressing the viewer as 'you'. It should sound like a gentle familiar memory. make it descriptive and also simple as the person is very confused. You are a kind parent explaining a picture to a child very simply. Output ONLY the narration text.";
+
+    const script = await ollama.generate(prompt, base64Image);
+    console.log("Ollama Script:", script);
+
+    // 3. Generate Audio using ElevenLabs
+    const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+    if (!elevenLabsApiKey) {
+      throw new Error("ELEVENLABS_API_KEY is missing");
     }
 
-    if (!imageUrl) {
-      return NextResponse.json({ error: "Missing imageUrl" }, { status: 400 });
-    }
+    // Default voice (Rachel) if none provided
+    const targetVoiceId = voiceId || "21m00Tcm4TlvDq8ikWAM";
 
-    // 1. Generate Script using GPT-4o
-    const scriptResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Write a very short, warm, reminiscent narration (max 10 words) for this photo, addressing the viewer as 'you'. It should sound like a gentle familiar memory. make it descriptive and also simple as the person is very confused. You are a kind parent explaining a picture to a child very simply",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: imageUrl,
-              },
-            },
-          ],
+    const ttsResponse = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`,
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": elevenLabsApiKey,
+          "Content-Type": "application/json",
         },
-      ],
-      max_tokens: 100,
-    });
+        body: JSON.stringify({
+          text: script,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+          },
+        }),
+      },
+    );
 
-    const script =
-      scriptResponse.choices[0].message.content ||
-      "This looks like a wonderful memory.";
+    if (!ttsResponse.ok) {
+      const errorText = await ttsResponse.text();
+      console.error("ElevenLabs Error:", errorText);
+      throw new Error("TTS Generation failed");
+    }
 
-    // 2. Determine Voice
-    // Map internal voice IDs to OpenAI TTS voices
-    // OpenAI voices: alloy, echo, fable, onyx, nova, shimmer
-    const voiceMap: Record<
-      string,
-      "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer"
-    > = {
-      "1": "alloy", // Default Narrator
-    };
-
-    // If activeVoice is not mapped, pick 'shimmer' as a gentle female alternative
-    // or 'onyx' as male. Defaulting to 'shimmer' for unmapped custom voices for now.
-    const selectedVoice = voiceMap[voiceId as string] || "shimmer";
-
-    // 3. Generate Audio using OpenAI TTS
-    const mp3 = await openai.audio.speech.create({
-      model: "tts-1",
-      voice: selectedVoice,
-      input: script,
-    });
-
-    const buffer = Buffer.from(await mp3.arrayBuffer());
-    const audioBase64 = `data:audio/mp3;base64,${buffer.toString("base64")}`;
+    const audioBuffer = await ttsResponse.arrayBuffer();
+    const audioBase64 = `data:audio/mp3;base64,${Buffer.from(audioBuffer).toString("base64")}`;
 
     return NextResponse.json({ script, audioUrl: audioBase64 });
   } catch (error) {

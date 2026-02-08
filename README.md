@@ -38,7 +38,9 @@ Echo Adaptive is a digital companion that delivers personalized memories to pati
 - **Frontend**: Next.js 16 + React + Tailwind CSS
 - **Auth**: Clerk
 - **Database**: Supabase (PostgreSQL + Row-Level Security)
-- **AI**: OpenAI GPT-4o (vision), ElevenLabs (TTS)
+- **AI**:
+  - **Vision/Text**: Local Ollama (Llava) via Ngrok tunnel
+  - **Voice**: ElevenLabs (TTS)
 
 ---
 
@@ -104,11 +106,40 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 📱 Usage
 
-1. **Sign In** with Clerk (email OTP)
-2. **Access Settings** (⚙️ top-right) with PIN `1234` (default)
-3. **Upload Memories** (photos/videos) in Settings
-4. **Watch the Feed** – memories are narrated and displayed fullscreen
-5. **Use Voice Mode** – tap empty space 3+ times to activate, then speak commands
+### 1. **Setup AI Tunnel**
+
+Before using the app, ensure your local AI is reachable:
+
+```bash
+./scripts/expose-ollama.sh
+# Copy the URL -> Vercel Env Var: OLLAMA_BASE_URL
+```
+
+### 2. **Get Started**
+
+1.  **Sign In**: Use your email (Clerk passwordless login).
+2.  **Unlock Settings**: Tap the ⚙️ icon (top-right). Default PIN: `1234`.
+
+### 3. **Manage Content**
+
+- **Upload**: In Settings > Media Management, upload photos/videos.
+  - _Note_: The AI will automatically analyze them to generate descriptions.
+- **Review**: Greenlight memories to add them to the patient's feed.
+
+### 4. **Clone a Voice**
+
+1.  Go to **Settings > Neural Proxy**.
+2.  Tap "Start Recording" and read the prompt for 1 minute.
+3.  Name the voice (e.g., "Grandma") and save.
+4.  Select it as the **Active Narrator**.
+
+### 5. **Patient Mode**
+
+- **Watch**: Memories play automatically with AI narration.
+- **Interact**:
+  - Double-tap to **Like** ❤️ (boosts engagement score).
+  - Long-press to **Recall** 🔄 (triggers future "Do you remember?" prompts).
+- **Voice Control**: Tap empty space 3x (or miss targets) to activate Voice Mode. Say "Next", "Like", or "Recall".
 
 ---
 

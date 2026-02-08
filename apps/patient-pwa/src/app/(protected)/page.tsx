@@ -123,7 +123,7 @@ export default function PatientView() {
   } = useAdaptationEngine({
     sundowningTime: "18:00",
     tapSensitivity: "medium",
-    onModeChange: (s) => console.log("Mode:", s),
+    onModeChange: (s) => {},
   });
 
   // TTS for Voice Mode
@@ -165,11 +165,14 @@ export default function PatientView() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript.toLowerCase();
-      console.log("Heard:", transcript);
 
       // Parse commands
       // Parse commands with looser matching
-      if (transcript.includes("next") || transcript.includes("skip") || transcript.includes("forward")) {
+      if (
+        transcript.includes("next") ||
+        transcript.includes("skip") ||
+        transcript.includes("forward")
+      ) {
         const nextIndex = Math.min(currentIndex + 1, memories.length - 1);
 
         // Only scroll if we are not at the end
@@ -182,18 +185,29 @@ export default function PatientView() {
               behavior: "smooth",
             });
           }
-          window.speechSynthesis.speak(new SpeechSynthesisUtterance("Next memory"));
+          window.speechSynthesis.speak(
+            new SpeechSynthesisUtterance("Next memory"),
+          );
         } else {
-          window.speechSynthesis.speak(new SpeechSynthesisUtterance("No more memories"));
+          window.speechSynthesis.speak(
+            new SpeechSynthesisUtterance("No more memories"),
+          );
         }
-      } else if (transcript.includes("like") || transcript.includes("love") || transcript.includes("heart")) {
+      } else if (
+        transcript.includes("like") ||
+        transcript.includes("love") ||
+        transcript.includes("heart")
+      ) {
         toggleLike();
         window.speechSynthesis.speak(new SpeechSynthesisUtterance("Liked"));
-      } else if (transcript.includes("recall") || transcript.includes("remember") || transcript.includes("save")) {
+      } else if (
+        transcript.includes("recall") ||
+        transcript.includes("remember") ||
+        transcript.includes("save")
+      ) {
         toggleRecall();
         window.speechSynthesis.speak(new SpeechSynthesisUtterance("Recalled"));
       } else {
-        console.log("Command not recognized:", transcript);
         window.speechSynthesis.speak(
           new SpeechSynthesisUtterance(
             "I heard " + transcript + ". Try saying Next, Like, or Recall.",
@@ -686,7 +700,9 @@ export default function PatientView() {
           registerTap(false);
           // Unlock audio context on first interaction
           if (audioRef.current && audioRef.current.paused && narrationAudio) {
-            audioRef.current.play().catch(e => console.log("Audio unlock failed", e));
+            audioRef.current
+              .play()
+              .catch((e) => console.log("Audio unlock failed", e));
           }
         }}
         className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-hide"
@@ -849,8 +865,13 @@ export default function PatientView() {
         </div>
       )}
 
-      {/* Audio Element */}
-      {narrationAudio && <audio ref={audioRef} src={narrationAudio} autoPlay />}
+      {/* Audio Element - Always rendered to ensure ref is available */}
+      <audio
+        ref={audioRef}
+        src={narrationAudio || ""}
+        autoPlay
+        style={{ display: "none" }}
+      />
 
       {/* Hide scrollbar and custom animations */}
       <style jsx global>{`
