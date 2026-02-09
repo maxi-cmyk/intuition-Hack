@@ -40,9 +40,24 @@ export async function POST(req: Request) {
       process.env.OLLAMA_VISION_MODEL || "llava",
     );
 
-    const prompt =
-      "Extract metadata from this image. Output a JSON object with keys: 'date' (guess, or null if unsure), 'location' (guess, or null if unsure), 'people' (description string, or null), 'summary' (Write a very short, warm, reminiscent narration (max 10 words) for this photo, addressing the viewer as 'you'. It should sound like a gentle familiar memory. make it descriptive but importantly simple as the target audience is a senior citizen with dementia, so they are probably very confused. (Imagine you are a kind parent explaining a picture to a child very simply). If you can't extract, return null for that field. OUTPUT RAW JSON ONLY.";
+    const prompt = `
+Role: You are a compassionate memory-care assistant specializing in reminiscence therapy.
 
+Task: Analyze the attached image and extract metadata to help a senior citizen with dementia identify the moment.
+
+Guidelines for 'Summary':
+
+Tone: Gentle, familiar, and reassuring.
+
+Perspective: Second person ("You").
+
+Clarity: Use high-frequency words and simple sentence structures. Avoid metaphors or complex timelines.
+
+Goal: Anchor the viewer in the emotion of the photo (e.g., "You are smiling at the beach with your friend.")
+
+Output Format: Return RAW JSON ONLY. Do not include markdown blocks or conversational filler.
+
+Schema: { "date": "Estimated YYYY-MM-DD or null", "location": "Estimated city/setting or null", "people": "Brief physical description of individuals present or null", "summary": "String (Max 10 words. Simple, warm narration addressing 'you'.)`
     // console.log("Analyzing with Ollama...");
     const responseText = await ollama.generate(prompt, base64Image, true);
     // console.log("Ollama Analysis:", responseText);
