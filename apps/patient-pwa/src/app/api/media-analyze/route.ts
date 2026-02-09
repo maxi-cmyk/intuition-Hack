@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     );
 
     const prompt =
-      "Extract metadata from this image. Output a JSON object with keys: 'date' (guess, or null if unsure), 'location' (guess, or null if unsure), 'people' (description string, or null), 'summary' (Write a very short, warm, reminiscent narration (max 10 words) for this photo, addressing the viewer as 'you'. It should sound like a gentle familiar memory. make it descriptive and also simple as the person is very confused. You are a kind parent explaining a picture to a child very simply). If you can't extract, return null for that field. OUTPUT RAW JSON ONLY.";
+      "Extract metadata from this image. Output a JSON object with keys: 'date' (guess, or null if unsure), 'location' (guess, or null if unsure), 'people' (description string, or null), 'summary' (Write a very short, warm, reminiscent narration (max 10 words) for this photo, addressing the viewer as 'you'. It should sound like a gentle familiar memory. make it descriptive but importantly simple as the target audience is a senior citizen with dementia, so they are probably very confused. (Imagine you are a kind parent explaining a picture to a child very simply). If you can't extract, return null for that field. OUTPUT RAW JSON ONLY.";
 
     // console.log("Analyzing with Ollama...");
     const responseText = await ollama.generate(prompt, base64Image, true);
