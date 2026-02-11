@@ -14,15 +14,15 @@ Echo Adaptive is a digital companion that delivers personalized memories to pati
 
 ## ✨ Features
 
-| Feature             | Description                                                              |
-| ------------------- | ------------------------------------------------------------------------ |
-| **Forever Feed**    | TikTok-style fullscreen memory viewer with vertical snap-scroll          |
+| Feature             | Description                                                             |
+| ------------------- | ----------------------------------------------------------------------- |
+| **Forever Feed**    | TikTok-style fullscreen memory viewer with vertical snap-scroll         |
 | **AI Narration**    | Automatic voiceover generation for each memory using llava + ElevenLabs |
-| **Voice Commands**  | Say "Next", "Like", or "Recall" to control the app hands-free            |
-| **Sundowning Mode** | Warm amber theme automatically activates after 6PM                       |
-| **Error Tolerance** | Detects missed taps and offers Voice Mode for accessibility              |
-| **Voice Cloning**   | Clone a familiar voice (e.g., family member) for personalized narration  |
-| **PIN Protection**  | Caregiver settings are secured behind a numeric PIN                      |
+| **Voice Commands**  | Say "Next", "Like", or "Recall" to control the app hands-free           |
+| **Sundowning Mode** | Warm amber theme automatically activates after 6PM                      |
+| **Error Tolerance** | Detects missed taps and offers Voice Mode for accessibility             |
+| **Voice Cloning**   | Clone a familiar voice (e.g., family member) for personalized narration |
+| **PIN Protection**  | Caregiver settings are secured behind a numeric PIN                     |
 
 ---
 
@@ -52,7 +52,9 @@ Echo Adaptive is a digital companion that delivers personalized memories to pati
 - npm v9+
 - Supabase project (with anon key)
 - Clerk application (with publishable + secret keys)
-- OpenAI API key
+- ElevenLabs API key
+- [Ollama](https://ollama.ai) installed locally (for vision AI)
+- [ngrok](https://ngrok.com) account + auth token (to expose Ollama)
 
 ### 1. Clone & Install
 
@@ -77,11 +79,83 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_ROLE_KEY=eyJ...
 
 # AI
-OPENAI_API_KEY=sk-...
 ELEVENLABS_API_KEY=...
+
+# Ollama (Local Vision Model — see Step 3)
+OLLAMA_BASE_URL=https://your-ngrok-url.ngrok-free.app
+OLLAMA_VISION_MODEL=llava
 ```
 
-### 3. Set Up Database
+### 3. Set Up Local AI (Ollama + LLaVA + ngrok)
+
+Echo uses **LLaVA** — a vision-language model — running locally via **Ollama** for image analysis and narration script generation. Since Ollama runs on `localhost`, we expose it to the internet via **ngrok** so the deployed app (Vercel) and mobile devices can reach it.
+
+> 💡 **Why local?** Patient photos are deeply personal. Running AI locally means images never leave your machine — no third-party API ever sees them. It's also free (no per-request costs).
+
+#### 3a. Install Ollama & pull LLaVA
+
+```bash
+# Install Ollama
+brew install ollama
+
+# Download the LLaVA model (~4.7 GB, one-time download)
+ollama pull llava
+```
+
+#### 3b. Start the Ollama server
+
+Open a **dedicated terminal** (keep it running):
+
+```bash
+ollama serve
+```
+
+Verify it works by visiting [http://localhost:11434](http://localhost:11434) — you should see "Ollama is running".
+
+#### 3c. Install & authenticate ngrok
+
+```bash
+# Install ngrok
+brew install ngrok/ngrok/ngrok
+
+# Sign up at https://dashboard.ngrok.com, then:
+ngrok config add-authtoken <your-token>
+```
+
+#### 3d. Expose Ollama via ngrok
+
+Open **another terminal** (keep it running):
+
+```bash
+./scripts/expose-ollama.sh
+```
+
+You'll see output like:
+
+```
+Forwarding  https://abc123.ngrok-free.app -> http://localhost:11434
+```
+
+#### 3e. Update the env var
+
+Copy the `Forwarding` URL and paste it into your `.env.local`:
+
+```env
+OLLAMA_BASE_URL=https://abc123.ngrok-free.app
+```
+
+> ⚠️ **The ngrok URL changes every time you restart it** (unless you have a paid static domain). You must update `OLLAMA_BASE_URL` each time.
+>
+> If deploying on Vercel: update the env var in **Project → Settings → Environment Variables**, then redeploy.
+
+#### Quick test
+
+```bash
+# Should print "Ollama is running"
+curl https://abc123.ngrok-free.app
+```
+
+### 4. Set Up Database
 
 Apply the schema to your Supabase project:
 
@@ -94,7 +168,7 @@ supabase link --project-ref <your-ref>
 supabase db push
 ```
 
-### 4. Run the App
+### 5. Run the App
 
 ```bash
 npm run dev
@@ -102,89 +176,37 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+> 📋 **Checklist — you should have 3 things running:**
+>
+> | Terminal   | Command                      | Purpose                        |
+> | ---------- | ---------------------------- | ------------------------------ |
+> | Terminal 1 | `ollama serve`               | Local AI server (port 11434)   |
+> | Terminal 2 | `./scripts/expose-ollama.sh` | ngrok tunnel to expose Ollama  |
+> | Terminal 3 | `npm run dev`                | Next.js dev server (port 3000) |
+
 ---
 
 ## 📱 Usage
 
-### 1. **Setup Local AI (Ollama + Llava)**
-
-This app uses **Llava** (a vision-language model) running locally via **Ollama** for image analysis. To make it accessible from deployed apps or mobile devices, we expose it via **ngrok**.
-
-#### Step 1: Install Ollama
-
-```bash
-# macOS
-brew install ollama
-
-# Or download from https://ollama.ai
-```
-
-#### Step 2: Download the Llava Model
-
-```bash
-ollama pull llava
-```
-
-#### Step 3: Start Ollama Server
-
-```bash
-ollama serve
-# Keep this terminal running
-```
-
-#### Step 4: Install and Configure ngrok
-
-```bash
-# Install ngrok
-brew install ngrok/ngrok/ngrok
-
-# Authenticate (get token from https://dashboard.ngrok.com)
-ngrok config add-authtoken <your-token>
-```
-
-#### Step 5: Expose Ollama via ngrok
-
-```bash
-./scripts/expose-ollama.sh
-```
-
-This will output a URL like `https://abc123.ngrok.io`
-
-#### Step 6: Update Environment Variable
-
-> ⚠️ **IMPORTANT**: The ngrok URL changes every time you restart it (unless you have a paid plan with static domains).
-
-Update your `.env.local` or Vercel environment:
-
-```env
-OLLAMA_BASE_URL=https://abc123.ngrok.io
-```
-
-If deploying to Vercel, update the env var in the Vercel dashboard:
-
-1. Go to your project → Settings → Environment Variables
-2. Update `OLLAMA_BASE_URL` with the new ngrok URL
-3. Redeploy the app
-
-### 2. **Get Started**
+### 1. **Sign In & Unlock Settings**
 
 1.  **Sign In**: Use your email (Clerk passwordless login).
 2.  **Unlock Settings**: Tap the ⚙️ icon (top-right). Default PIN: `1234`.
 
-### 3. **Manage Content**
+### 2. **Manage Content**
 
 - **Upload**: In Settings > Media Management, upload photos/videos.
-  - _Note_: The AI will automatically analyze them to generate descriptions.
+  - The AI (LLaVA via Ollama) will automatically analyze them to generate descriptions.
 - **Review**: Greenlight memories to add them to the patient's feed.
 
-### 4. **Clone a Voice**
+### 3. **Clone a Voice**
 
 1.  Go to **Settings > Neural Proxy**.
 2.  Tap "Start Recording" and read the prompt for 1 minute.
 3.  Name the voice (e.g., "Grandma") and save.
 4.  Select it as the **Active Narrator**.
 
-### 5. **Patient Mode**
+### 4. **Patient Mode**
 
 - **Watch**: Memories play automatically with AI narration.
 - **Interact**:
@@ -272,4 +294,3 @@ intuition-Hack/
 ## 📄 License
 
 MIT
-

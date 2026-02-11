@@ -26,6 +26,20 @@
 | Text-to-Speech    | ElevenLabs     | Generate voiceover audio (eleven_multilingual_v2)     |
 | Voice Cloning     | ElevenLabs     | Clone familiar voices for personalized narration      |
 
+#### Using Ollama + llava + ngrok
+
+We deliberately chose to run our vision-language model **locally** rather than using a cloud API (e.g. GPT-4 Vision, Google Cloud Vision). There are three reasons:
+
+1. **Privacy** — Echo processes deeply personal family photos. By running LLaVA on the developer's own machine, patient images never leave the local network. No photos are uploaded to third-party AI providers, which is critical when handling sensitive medical/personal content.
+
+2. **Cost** — Cloud vision APIs charge per request. Since every uploaded photo is analyzed and every memory needs a narration script, API costs would scale quickly. Ollama is free and open-source — the only cost is the hardware the user already owns.
+
+3. **Control & Reliability** — There is no vendor lock-in, no rate limits, and no API key quotas. The model runs offline once downloaded, making the system resilient to internet outages or provider policy changes.
+
+**The ngrok bridge**: Since Ollama runs on `localhost:11434`, it is not reachable from the deployed app on Vercel or from mobile devices. We use **ngrok** to create a secure HTTPS tunnel that exposes `localhost:11434` to the internet. The deployed app connects to the ngrok URL, which forwards requests to the local Ollama server.
+
+> ⚠️ **Trade-off**: The ngrok URL changes on every restart (unless using a paid static domain), so the `OLLAMA_BASE_URL` environment variable must be updated each time. This is acceptable for a hackathon/dev context where the developer's machine is the AI backend.
+
 ### 2.3 Adaptive Modes
 
 #### Sundowning Mode
