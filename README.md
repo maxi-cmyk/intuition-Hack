@@ -91,6 +91,8 @@ OLLAMA_VISION_MODEL=llava
 Echo uses **LLaVA** — a vision-language model — running locally via **Ollama** for image analysis and narration script generation. Since Ollama runs on `localhost`, we expose it to the internet via **ngrok** so the deployed app (Vercel) and mobile devices can reach it.
 
 > 💡 **Why local?** Patient photos are deeply personal. Running AI locally means images never leave your machine — no third-party API ever sees them. It's also free (no per-request costs).
+>
+> ⚠️ **Crucial Note**: Each developer must run their own local Ollama + ngrok instance. Do not share ngrok URLs between team members, as they point to _different_ local machines.
 
 #### 3a. Install Ollama & pull LLaVA
 
@@ -114,20 +116,60 @@ Verify it works by visiting [http://localhost:11434](http://localhost:11434) —
 
 #### 3c. Install & authenticate ngrok
 
+**Mac:**
+
 ```bash
-# Install ngrok
+# Install ngrok via Homebrew
 brew install ngrok/ngrok/ngrok
 
-# Sign up at https://dashboard.ngrok.com, then:
+# Authenticate (sign up at dashboard.ngrok.com first)
 ngrok config add-authtoken <your-token>
 ```
 
+**Windows:**
+
+**Option A (Recommended): Use Chocolatey**
+
+If you have [Chocolatey](https://chocolatey.org/) installed, this is the easiest way:
+
+1.  **Install:** Open PowerShell as Administrator and run:
+    ```powershell
+    choco install ngrok
+    ```
+2.  **Authenticate:**
+    ```powershell
+    ngrok config add-authtoken <your-token>
+    ```
+
+**Option B (Manual): Zip Download**
+
+1.  **Download:** Get the Windows version from [ngrok.com/download](https://ngrok.com/download).
+2.  **Unzip:** Extract the `ngrok.exe` file to a folder (e.g., `C:\ngrok`).
+3.  **Authenticate:** Open Command Prompt or PowerShell **inside that folder** and run:
+    ```powershell
+    .\ngrok.exe config add-authtoken <your-token>
+    ```
+
 #### 3d. Expose Ollama via ngrok
 
-Open **another terminal** (keep it running):
+**Mac/Linux:**
+
+Open **another terminal** and run the helper script:
 
 ```bash
 ./scripts/expose-ollama.sh
+```
+
+**Windows:**
+
+Open Command Prompt or PowerShell and run:
+
+```powershell
+# If installed via Chocolatey:
+ngrok http 11434 --host-header="localhost:11434"
+
+# If using the manual Zip method (and inside the folder):
+.\ngrok.exe http 11434 --host-header="localhost:11434"
 ```
 
 You'll see output like:
@@ -138,7 +180,7 @@ Forwarding  https://abc123.ngrok-free.app -> http://localhost:11434
 
 #### 3e. Update the env var
 
-Copy the `Forwarding` URL and paste it into your `.env.local`:
+Copy the `Forwarding` URL (e.g., `https://abc123.ngrok-free.app`) and paste it into your `.env.local`:
 
 ```env
 OLLAMA_BASE_URL=https://abc123.ngrok-free.app
@@ -146,7 +188,7 @@ OLLAMA_BASE_URL=https://abc123.ngrok-free.app
 
 > ⚠️ **The ngrok URL changes every time you restart it** (unless you have a paid static domain). You must update `OLLAMA_BASE_URL` each time.
 >
-> If deploying on Vercel: update the env var in **Project → Settings → Environment Variables**, then redeploy.
+> **Do not commit this URL to git.** It is specific to your current session and machine.
 
 #### Quick test
 
